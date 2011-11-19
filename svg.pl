@@ -2,6 +2,8 @@
 use strict;
 use warnings;
 
+use charnames ':full';
+use utf8;
 use SVG;
 
 my $square_size = 100;
@@ -14,8 +16,9 @@ my %colours = (
         DW => "#E32745",
         TL => "#579B0B",
 
-        board => "#E3F6FF",
+        board  => "#E3F6FF",
         border => "#20111C",
+        center => "#E32745",
     );
 
 my $svg = SVG->new(width => $board_size, height => $board_size);
@@ -109,11 +112,13 @@ my %specials = (
 
 drawmargins($board);
 
+makesquare($board, x => 7, y => 7, colour => $colours{center}, text => "\N{BLACK STAR}", style => 'font-size:2.2em');
 for my $type (keys %specials) {
     for my $c (@{ $specials{$type} }) {
         makesquare($board, x => $c->[0], y => $c->[1], colour => $colours{$type}, text => $type);
     }
 }
 
+binmode STDOUT, ":utf8";
 print $svg->xmlify;
 
