@@ -1,10 +1,24 @@
 #!/usr/bin/env perl
+
+package Furries;
+use base qw( Gtk2::GladeXML::Simple );
+
 use strict;
 use warnings;
 
 use charnames ':full';
 use utf8;
+
+use Glib qw/TRUE FALSE/;
+use Gtk2::Ex::Simple::List;
+use Gtk2 '-init';
+use Gtk2::SimpleList;
+use List::Util qw(min);
+
+use Gnome2::Rsvg;
 use SVG;
+
+my $glade_file = "board.glade";
 
 my $square_size = 25;
 my $margin      = 1;
@@ -111,17 +125,61 @@ my %specials = (
 
     );
 
-drawmargins($board);
-
-makesquare($board, x => 7, y => 7, colour => $colours{center}, text => "\N{BLACK STAR}", style => "font-size:@{[1.1*$font_size]}pt");
-for my $type (keys %specials) {
-    for my $c (@{ $specials{$type} }) {
-        makesquare($board, x => $c->[0], y => $c->[1], colour => $colours{$type}, text => $type);
+sub new
+{
+    my $class = shift;
+    my $self;
+    if (-f $glade_file) {
+        $self = $class->SUPER::new($glade_file);
+    } else {
+        die "Glade file '$glade_file' does not exist";
     }
+
+    drawmargins($board);
+
+    makesquare($board, x => 7, y => 7, colour => $colours{center}, text => "\N{BLACK STAR}", style => "font-size:@{[1.1*$font_size]}pt");
+    for my $type (keys %specials) {
+        for my $c (@{ $specials{$type} }) {
+            makesquare($board, x => $c->[0], y => $c->[1], colour => $colours{$type}, text => $type);
+        }
+    }
+
+    return $self;
 }
 
-#makesquare($board, x => 1, y => 2, colour => $colours{tile}, text => "D", style => "fill:black;text-align:center");
+sub board_button_press_event_cb
+{
+    die "halp";
+}
 
-binmode STDOUT, ":utf8";
-print $svg->xmlify;
+sub boardimage_expose_event_cb
+{
+    my ($self) = @_;
+    warn "exposed";
+    #makesquare($board, x => 1, y => 2, colour => $colours{tile}, text => "D", style => "fill:black;text-align:center");
+
+    # TODO cache pixbufs
+    my $b = $self->get_widget('boardimage');
+    my $r = Gnome2::Rsvg::Handle->new;
+
+    $r->set_size_callback( sub { return (min($b->allocation->width, $b->allocation->height)) x 2 });
+    $r->write($svg->xmlify) or die "Failed to write SVG to RSVG handle";
+    $r->close or die "Failed to parse SVG";
+    my $pixbuf = $r->get_pixbuf;
+
+    $b->set_from_pixbuf($pixbuf);
+
+    #binmode STDOUT, ":utf8";
+    #print $svg->xmlify;
+
+    return FALSE; # propagate
+}
+
+sub gtk_main_quit { Gtk2->main_quit }
+
+package main;
+use strict;
+use warnings;
+
+Furries->new->run;
 
