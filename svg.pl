@@ -6,9 +6,10 @@ use charnames ':full';
 use utf8;
 use SVG;
 
-my $square_size = 100;
-my $margin = 4;
-my $board_size = 15 * $square_size + 16 * $margin;
+my $square_size = 25;
+my $margin      = 1;
+my $board_size  = 15 * $square_size + 16 * $margin;
+my $font_size   = 0.39 * $square_size;
 
 my %colours = (
         TW => "#FB4C08",
@@ -19,6 +20,7 @@ my %colours = (
         board  => "#E3F6FF",
         border => "#20111C",
         center => "#E32745",
+        tile   => "#DFBC95",
     );
 
 my $svg = SVG->new(width => $board_size, height => $board_size);
@@ -53,30 +55,29 @@ sub makesquare
         );
 
     $board->text(
-            x     => 20 + $xc,
-            y     => 67 + $yc,
-            style => "font-size:2em;fill:white;font-family:monospace;$style",
+            x     => 0.20 * $square_size + $xc,
+            y     => 0.67 * $square_size + $yc,
+            style => "font-size:${font_size}pt;fill:white;font-family:monospace;$style",
         )->tspan->cdata($text);
 }
 
 sub drawmargins
 {
     my ($board) = @_;
-    for my $y (0 .. 15) {
+    for my $i (0 .. 15) {
+        my $c = $i * ($square_size + $margin);
         $board->rect(
-                id     => "margin_row_$y",
-                y      => $y * ($square_size + $margin),
+                id     => "margin_row_$i",
+                y      => $c,
                 height => $margin,
                 width  => $board_size,
                 style  => "fill:$colours{border}",
             );
-    }
-    for my $x (0 .. 15) {
         $board->rect(
-                id     => "margin_col_$x",
-                x      => $x * ($square_size + $margin),
-                width  => $margin,
+                id     => "margin_col_$i",
+                x      => $c,
                 height => $board_size,
+                width  => $margin,
                 style  => "fill:$colours{border}",
             );
     }
@@ -112,12 +113,14 @@ my %specials = (
 
 drawmargins($board);
 
-makesquare($board, x => 7, y => 7, colour => $colours{center}, text => "\N{BLACK STAR}", style => 'font-size:2.2em');
+makesquare($board, x => 7, y => 7, colour => $colours{center}, text => "\N{BLACK STAR}", style => "font-size:@{[1.1*$font_size]}pt");
 for my $type (keys %specials) {
     for my $c (@{ $specials{$type} }) {
         makesquare($board, x => $c->[0], y => $c->[1], colour => $colours{$type}, text => $type);
     }
 }
+
+#makesquare($board, x => 1, y => 2, colour => $colours{tile}, text => "D", style => "fill:black;text-align:center");
 
 binmode STDOUT, ":utf8";
 print $svg->xmlify;
