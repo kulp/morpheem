@@ -4,18 +4,29 @@ use warnings;
 
 use SVG;
 
-my $svg = SVG->new(width=>1500, height=>1500);
-my $layer = $svg->group(id => 'layer');
-my $board = $layer->group(id => 'board');
-
 my $square_size = 100;
-my $margin = 0;
+my $margin = 4;
+my $board_size = 15 * $square_size + 14 * $margin;
 
 my %colours = (
         TW => "#FB4C08",
         DL => "#2E89CD",
         DW => "#E32745",
         TL => "#579B0B",
+
+        board => "#E3F6FF",
+    );
+
+my $svg = SVG->new(width => $board_size, height => $board_size);
+my $layer = $svg->group(id => 'layer');
+my $board = $layer->group(id => 'board');
+my $rect = $board->rect(
+        id => "rect_board",
+        style => "fill:$colours{board}",
+        x => 0,
+        y => 0,
+        width => $board_size,
+        height => $board_size,
     );
 
 sub makesquare
@@ -25,8 +36,8 @@ sub makesquare
     $style ||= "";
     $text ||= "";
 
-    my $xc = $x * $square_size + $margin;
-    my $yc = $y * $square_size + $margin;
+    my $xc = $x * ($square_size + $margin);
+    my $yc = $y * ($square_size + $margin);
 
     my $square = $board->rect(
             id     => "rect_${x}_${y}",
@@ -71,6 +82,7 @@ my %specials = (
                 [ 5,13],          [ 9,13], ],
 
     );
+
 for my $type (keys %specials) {
     for my $c (@{ $specials{$type} }) {
         makesquare($board, x => $c->[0], y => $c->[1], colour => $colours{$type}, text => $type);
