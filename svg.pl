@@ -6,7 +6,7 @@ use SVG;
 
 my $square_size = 100;
 my $margin = 4;
-my $board_size = 15 * $square_size + 14 * $margin;
+my $board_size = 15 * $square_size + 16 * $margin;
 
 my %colours = (
         TW => "#FB4C08",
@@ -15,17 +15,18 @@ my %colours = (
         TL => "#579B0B",
 
         board => "#E3F6FF",
+        border => "#20111C",
     );
 
 my $svg = SVG->new(width => $board_size, height => $board_size);
 my $layer = $svg->group(id => 'layer');
 my $board = $layer->group(id => 'board');
 my $rect = $board->rect(
-        id => "rect_board",
-        style => "fill:$colours{board}",
-        x => 0,
-        y => 0,
-        width => $board_size,
+        id     => "rect_board",
+        style  => "fill:$colours{board}",
+        x      => 0,
+        y      => 0,
+        width  => $board_size,
         height => $board_size,
     );
 
@@ -36,8 +37,8 @@ sub makesquare
     $style ||= "";
     $text ||= "";
 
-    my $xc = $x * ($square_size + $margin);
-    my $yc = $y * ($square_size + $margin);
+    my $xc = $x * ($square_size + $margin) + $margin;
+    my $yc = $y * ($square_size + $margin) + $margin;
 
     my $square = $board->rect(
             id     => "rect_${x}_${y}",
@@ -53,6 +54,29 @@ sub makesquare
             y     => 67 + $yc,
             style => "font-size:2em;fill:white;font-family:monospace;$style",
         )->tspan->cdata($text);
+}
+
+sub drawmargins
+{
+    my ($board) = @_;
+    for my $y (0 .. 15) {
+        $board->rect(
+                id     => "margin_row_$y",
+                y      => $y * ($square_size + $margin),
+                height => $margin,
+                width  => $board_size,
+                style  => "fill:$colours{border}",
+            );
+    }
+    for my $x (0 .. 15) {
+        $board->rect(
+                id     => "margin_col_$x",
+                x      => $x * ($square_size + $margin),
+                width  => $margin,
+                height => $board_size,
+                style  => "fill:$colours{border}",
+            );
+    }
 }
 
 my %specials = (
@@ -82,6 +106,8 @@ my %specials = (
                 [ 5,13],          [ 9,13], ],
 
     );
+
+drawmargins($board);
 
 for my $type (keys %specials) {
     for my $c (@{ $specials{$type} }) {
