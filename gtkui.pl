@@ -286,7 +286,9 @@ sub boardclick_cb
     return 0;
 }
 
-sub gtk_main_quit { Gtk2->main_quit }
+sub gtk_main_quit  { Gtk2->main_quit }
+sub show_about_box { shift->get_widget('aboutdialog1')->show }
+sub hide_about_box { $_[1]->hide }
 
 package main;
 use strict;
