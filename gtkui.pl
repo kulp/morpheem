@@ -6,17 +6,15 @@ use base qw( Gtk2::GladeXML::Simple );
 use strict;
 use warnings;
 
+use PAR;
+use lib "furries";
+
 use charnames ':full';
 use utf8;
 
-use Data::Dumper;
-
-use Glib qw/TRUE FALSE/;
-use Gtk2::Ex::Simple::List;
 use Gtk2 '-init';
-use Gtk2::SimpleList;
-
 use Gnome2::Rsvg;
+use JSON;
 use List::Util qw(min);
 use SVG;
 use YAML qw(LoadFile);
@@ -43,33 +41,32 @@ my %colours = (
     );
 
 # TODO other languages
-# From Games::Literati
-# XXX these are not the WordFeud point values
+# XXX these are WordFeud point values, not Scrabble !
 my %values = (
     a =>  1,
-    b =>  3,
-    c =>  3,
+    b =>  4,
+    c =>  4,
     d =>  2,
     e =>  1,
     f =>  4,
-    g =>  2,
+    g =>  3,
     h =>  4,
     i =>  1,
-    j =>  8,
+    j => 10,
     k =>  5,
     l =>  1,
     m =>  3,
     n =>  1,
     o =>  1,
-    p =>  3,
+    p =>  4,
     q => 10,
     r =>  1,
     s =>  1,
     t =>  1,
-    u =>  1,
+    u =>  2,
     v =>  4,
     w =>  4,
-    x =>  8,
+    x => 10, # TODO check
     y =>  4,
     z => 10,
 );
@@ -90,46 +87,52 @@ my $rect = $board->rect(
 sub makesquare
 {
     my ($board, %args) = @_;
-    my ($x, $y, $style, $colour, $text) = @args{qw(x y style colour text)};
-    $style ||= "";
+    my ($x, $y, $squarestyle, $textstyle, $colour, $text) = @args{qw(x y squarestyle textstyle colour text)};
+    $squarestyle ||= "";
+    $textstyle ||= "";
     $text ||= "";
 
     my $xc = $x * ($square_size + $margin) + $margin;
     my $yc = $y * ($square_size + $margin) + $margin;
 
     my $square = $board->rect(
+            # TODO ids ?
             #id     => "rect_${x}_${y}",
             width  => $square_size,
             height => $square_size,
             x      => $xc,
             y      => $yc,
-            style  => "fill:$colour",
+            style  => "fill:$colour;$squarestyle",
         );
 
     $board->text(
             x     => 0.20 * $square_size + $xc,
             y     => 0.67 * $square_size + $yc,
-            style => "font-size:${font_size}pt;fill:white;font-family:monospace;$style",
+            style => "font-size:${font_size}pt;fill:white;font-family:monospace;$textstyle",
         )->tspan->cdata($text);
 }
 
 sub makeletter
 {
     my ($board, %args) = @_;
-    my ($x, $y, $letter) = @args{qw(x y letter)};
-    makesquare($board, %args, colour => $colours{tile}, text => uc $letter, style => "fill:black");
+    my ($x, $y, $letter, $isblank) = @args{qw(x y letter isblank)};
+    makesquare($board, %args, colour => $colours{tile}, text => uc $letter,
+            squarestyle => "fill-opacity:85%", textstyle => "fill:black");
 
     my $xc = $x * ($square_size + $margin) + $margin;
     my $yc = $y * ($square_size + $margin) + $margin;
     my $font_size = $font_size * 0.5;
 
-    $board->text(
-            x     => 0.50 * $square_size + $xc,
-            y     => 0.77 * $square_size + $yc,
-            style => "font-size:${font_size}pt;fill:black;font-family:monospace",
-        )->tspan->cdata($values{lc $letter});
+    unless ($isblank) {
+        $board->text(
+                x     => 0.55 * $square_size + $xc,
+                y     => 0.77 * $square_size + $yc,
+                style => "font-size:${font_size}pt;fill:black;font-family:monospace",
+            )->tspan->cdata($values{lc $letter});
+    }
 }
 
+# XXX not useful
 sub makeword
 {
     my ($board, %args) = @_;
@@ -197,7 +200,7 @@ sub makedefaultboard
 {
     my ($board) = @_;
 
-    makesquare($board, x => 7, y => 7, colour => $colours{center}, text => "\N{BLACK STAR}", style => "font-size:@{[1.1*$font_size]}pt");
+    makesquare($board, x => 7, y => 7, colour => $colours{center}, text => "\N{BLACK STAR}", textstyle => "font-size:@{[1.1*$font_size]}pt");
     for my $type (keys %specials) {
         for my $c (@{ $specials{$type} }) {
             makesquare($board, x => $c->[0], y => $c->[1], colour => $colours{$type}, text => $type);
@@ -207,10 +210,15 @@ sub makedefaultboard
 
 sub loadboard
 {
-    my ($board, $game) = @_;
+    my ($self, $board, $game) = @_;
     for my $tile (@{ $game->{game}{tiles} }) {
         # TODO handle blanks
-        makeletter($board, x => $tile->[0], y => $tile->[1], letter => $tile->[2], blank => $tile->[3]);
+        my $x = $tile->[0];
+        my $y = $tile->[1];
+        my $letter = $tile->[2];
+        my $isblank = $tile->[3];
+        makeletter($board, x => $x, y => $y, letter => $letter, isblank => $isblank);
+        $self->{_board}[$y][$x] = $letter;
     }
 }
 
@@ -221,16 +229,32 @@ sub new
     if (-f $glade_file) {
         $self = $class->SUPER::new($glade_file);
     } else {
-        die "Glade file '$glade_file' does not exist";
+        # Maybe we were packed with PAR
+        my $tmp = File::Temp->new;
+        print $tmp PAR::read_file(basename $glade_file);
+        close $tmp;
+        $self = $class->SUPER::new($tmp->filename);
     }
 
     drawmargins($board);
     makedefaultboard($board);
-    #makeword($board, x => 4, y => 7, dir => "right", word => "DARREN");
     my $dump = LoadFile("board.yaml") or die "Failed to load board";
-    loadboard($board, $dump->{content} || die "Bad board");
+    $self->loadboard($board, $dump->{content} || die "Bad board");
 
     return $self;
+}
+
+# takes a GtkWidget
+sub _boardsize
+{
+    my $self = shift;
+    my $b = shift || $self->get_widget('boardarea');
+    my $size = min($b->allocation->width, $b->allocation->height);
+}
+
+sub _cellsize
+{
+    return shift->_boardsize / 15;
 }
 
 sub boardarea_draw_cb
@@ -241,7 +265,7 @@ sub boardarea_draw_cb
     # TODO cache pixbufs
     my $r = Gnome2::Rsvg::Handle->new;
 
-    my $size = min($b->allocation->width, $b->allocation->height);
+    my $size = $self->_boardsize($b);
     $r->set_size_callback( sub { ($size, $size) });
     $r->write($svg->xmlify) or die "Failed to write SVG to RSVG handle";
     $r->close or die "Failed to parse SVG";
@@ -249,17 +273,17 @@ sub boardarea_draw_cb
     $r->get_pixbuf->render_to_drawable($b->window, $b->style->fg_gc($b->state),
             0, 0, 0, 0, $size, $size, "GDK_RGB_DITHER_NONE", 0, 0);
 
-    return FALSE; # propagate
+    return 0; # propagate
 }
 
 sub boardclick_cb
 {
     my ($self, $ebox, $event) = @_;
-    #warn Dumper \@_;
-    my ($x, $y) = ($event->x, $event->y);
+    my $size = $self->_cellsize;
+    my ($x, $y) = map { int $_ / $size } ($event->x, $event->y);
+    # x and y are in cell coordinates
     warn "$x, $y";
-    #my $b = $self->get_widget(
-    return FALSE;
+    return 0;
 }
 
 sub gtk_main_quit { Gtk2->main_quit }
