@@ -298,7 +298,7 @@ sub _boardsize
 {
     my $self = shift;
     my $b = shift || $self->get_widget('boardarea');
-    my $size = min($b->allocation->width, $b->allocation->height);
+    return min($b->allocation->width, $b->allocation->height);
 }
 
 sub _cellsize
@@ -309,17 +309,16 @@ sub _cellsize
 sub boardarea_draw_cb
 {
     my ($self, $b, $event) = @_;
-    warn "drawing $b";
 
     my $r = Gnome2::Rsvg::Handle->new;
 
     my $boardsvg = $private{$self}{boardsvg};
     my $size = $self->_boardsize($b);
+
     $r->set_size_callback( sub { ($size, $size) });
     $r->write($boardsvg->xmlify) or die "Failed to write SVG to RSVG handle";
     $r->close or die "Failed to parse SVG";
     # XXX deprecated, use Cairo
-    #warn $boardsvg->xmlify;
     $r->get_pixbuf->render_to_drawable($b->window, $b->style->fg_gc($b->state),
             0, 0, 0, 0, $size, $size, "GDK_RGB_DITHER_NONE", 0, 0);
 
@@ -329,13 +328,13 @@ sub boardarea_draw_cb
 sub rackarea_draw_cb
 {
     my ($self, $b, $event) = @_;
-    warn "drawing $b";
 
     my $r = Gnome2::Rsvg::Handle->new;
 
     my $racksvg = $private{$self}{racksvg};
     my $height = $b->allocation->height;
     my $width  = $height * 7 + $margin * 8;
+    $b->set_size_request($width, $height);
     $r->set_size_callback( sub { ($height, $width) });
     $r->write($racksvg->xmlify) or die "Failed to write SVG to RSVG handle";
     $r->close or die "Failed to parse SVG";
