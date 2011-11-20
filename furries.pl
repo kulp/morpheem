@@ -203,18 +203,38 @@ sub loadboard
     }
 }
 
+sub setrack
+{
+    my ($self, $letters) = @_;
+
+    my $racksvg = $private{$self}{racksvg} = SVG->new(width => $rack_width, height => $rack_height);
+    my $racklayer = $racksvg->group(id => 'layer');
+    my $rack = $private{$self}{rack} = $racklayer->group(id => 'rack');
+    $rack->rect(
+            id     => "rect_rack",
+            style  => "fill:$colours{rack}",
+            x      => 0,
+            y      => 0,
+            width  => $rack_width,
+            height => $rack_height,
+        );
+
+    my $x = 0;
+    $private{$self}{_rack} = $letters;
+    for my $tile (@$letters) {
+        makeletter($rack, x => $x, y => 0, letter => uc $tile);
+        $x++;
+    }
+
+}
+
 sub loadrack
 {
-    my ($self, $rack, $game) = @_;
+    my ($self, $game) = @_;
     my $players = $game->{game}{players};
     # XXX finding myself this way is a hack
     my ($me) = grep { $_->{rack} } @$players;
-    my $x = 0;
-    for my $tile (@{ $me->{rack} }) {
-        makeletter($rack, x => $x, y => 0, letter => uc $tile);
-        $self->{_rack}[$x] = $tile;
-        $x++;
-    }
+    $self->setrack($me->{rack});
 }
 
 sub new
@@ -244,23 +264,10 @@ sub new
         );
     drawmargins($board, x => 15, y => 15, board_height => $board_size, board_width => $board_size);
 
-    my $racksvg = $private{$self}{racksvg} = SVG->new(width => $rack_width, height => $rack_height);
-    my $racklayer = $racksvg->group(id => 'layer');
-    my $rack = $private{$self}{rack} = $racklayer->group(id => 'rack');
-    $rack->rect(
-            id     => "rect_rack",
-            style  => "fill:$colours{rack}",
-            x      => 0,
-            y      => 0,
-            width  => $rack_width,
-            height => $rack_height,
-        );
-    #drawmargins($rack, x => 7, y => 1, board_height => $rack_height, board_width => $rack_width);
-
     makedefaultboard($board);
     my $dump = LoadFile("board.yaml") or die "Failed to load board";
     $self->loadboard($board, $dump->{content} || die "Bad board");
-    $self->loadrack($rack  , $dump->{content} || die "Bad rack");
+    $self->loadrack($dump->{content} || die "Bad rack");
 
     return $self;
 }
@@ -326,6 +333,30 @@ sub boardclick_cb
     # x and y are in cell coordinates
     warn "$x, $y";
     return 0;
+}
+
+sub shuffle_rack
+{
+    my ($self, $button) = @_;
+
+    my @new;
+    my @old = @{ $private{$self}{_rack} };
+    MIX: {
+        @new = ();
+        my @temp = @old;
+        while (@temp) {
+            push @new, splice @temp, rand @temp;
+        }
+
+        # ensure we don't get the same permutation (feels like a bug to the user)
+        for my $i (0 .. $#new) {
+            last MIX if $new[$i] ne $old[$i];
+        }
+        redo MIX;
+    }
+
+    $self->setrack(\@new);
+    $self->get_widget('rackarea')->queue_draw;
 }
 
 sub gtk_main_quit  { Gtk2->main_quit }
