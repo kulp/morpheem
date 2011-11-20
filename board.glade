@@ -5,7 +5,7 @@
   <widget class="GtkAboutDialog" id="aboutdialog1">
     <property name="border_width">5</property>
     <property name="type_hint">normal</property>
-    <property name="program_name">Furries</property>
+    <property name="program_name">Morpheem</property>
     <property name="version">0.1</property>
     <property name="copyright" translatable="yes" comments="MIT License">Copyright (c) 2011 Darren Kulp</property>
     <property name="license" translatable="yes">Copyright (c) 2011 Darren Kulp

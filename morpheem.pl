@@ -1,10 +1,10 @@
 #!/usr/bin/env perl
 
-package Furries;
+package Morpheem;
 use base qw(Gtk2::GladeXML::Simple);
 
 use PAR;
-#use lib "furries";
+#use lib "morpheem";
 
 use strict;
 use warnings;
@@ -387,5 +387,5 @@ package main;
 use strict;
 use warnings;
 
-Furries->new->run;
+Morpheem->new->run;
 
