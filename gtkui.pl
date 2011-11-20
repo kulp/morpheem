@@ -16,10 +16,10 @@ use Gtk2::Ex::Simple::List;
 use Gtk2 '-init';
 use Gtk2::SimpleList;
 
-use List::Util qw(min);
-
 use Gnome2::Rsvg;
+use List::Util qw(min);
 use SVG;
+use YAML qw(LoadFile);
 
 my $glade_file = "board.glade";
 
@@ -44,6 +44,7 @@ my %colours = (
 
 # TODO other languages
 # From Games::Literati
+# XXX these are not the WordFeud point values
 my %values = (
     a =>  1,
     b =>  3,
@@ -116,7 +117,7 @@ sub makeletter
 {
     my ($board, %args) = @_;
     my ($x, $y, $letter) = @args{qw(x y letter)};
-    makesquare($board, %args, colour => $colours{tile}, text => $letter, style => "fill:black");
+    makesquare($board, %args, colour => $colours{tile}, text => uc $letter, style => "fill:black");
 
     my $xc = $x * ($square_size + $margin) + $margin;
     my $yc = $y * ($square_size + $margin) + $margin;
@@ -192,6 +193,27 @@ my %specials = (
 
     );
 
+sub makedefaultboard
+{
+    my ($board) = @_;
+
+    makesquare($board, x => 7, y => 7, colour => $colours{center}, text => "\N{BLACK STAR}", style => "font-size:@{[1.1*$font_size]}pt");
+    for my $type (keys %specials) {
+        for my $c (@{ $specials{$type} }) {
+            makesquare($board, x => $c->[0], y => $c->[1], colour => $colours{$type}, text => $type);
+        }
+    }
+}
+
+sub loadboard
+{
+    my ($board, $game) = @_;
+    for my $tile (@{ $game->{game}{tiles} }) {
+        # TODO handle blanks
+        makeletter($board, x => $tile->[0], y => $tile->[1], letter => $tile->[2], blank => $tile->[3]);
+    }
+}
+
 sub new
 {
     my $class = shift;
@@ -203,15 +225,10 @@ sub new
     }
 
     drawmargins($board);
-
-    makesquare($board, x => 7, y => 7, colour => $colours{center}, text => "\N{BLACK STAR}", style => "font-size:@{[1.1*$font_size]}pt");
-    for my $type (keys %specials) {
-        for my $c (@{ $specials{$type} }) {
-            makesquare($board, x => $c->[0], y => $c->[1], colour => $colours{$type}, text => $type);
-        }
-    }
-
-    makeword($board, x => 4, y => 7, dir => "right", word => "DARREN");
+    makedefaultboard($board);
+    #makeword($board, x => 4, y => 7, dir => "right", word => "DARREN");
+    my $dump = LoadFile("board.yaml") or die "Failed to load board";
+    loadboard($board, $dump->{content} || die "Bad board");
 
     return $self;
 }
