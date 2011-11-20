@@ -9,10 +9,13 @@ use warnings;
 use charnames ':full';
 use utf8;
 
+use Data::Dumper;
+
 use Glib qw/TRUE FALSE/;
 use Gtk2::Ex::Simple::List;
 use Gtk2 '-init';
 use Gtk2::SimpleList;
+
 use List::Util qw(min);
 
 use Gnome2::Rsvg;
@@ -152,10 +155,10 @@ sub board_button_press_event_cb
     die "halp";
 }
 
-sub boardimage_expose_event_cb
+sub boardimage_draw_cb
 {
     my ($self) = @_;
-    warn "exposed";
+    #warn "exposed";
     #makesquare($board, x => 1, y => 2, colour => $colours{tile}, text => "D", style => "fill:black;text-align:center");
 
     # TODO cache pixbufs
@@ -165,14 +168,26 @@ sub boardimage_expose_event_cb
     $r->set_size_callback( sub { return (min($b->allocation->width, $b->allocation->height)) x 2 });
     $r->write($svg->xmlify) or die "Failed to write SVG to RSVG handle";
     $r->close or die "Failed to parse SVG";
-    my $pixbuf = $r->get_pixbuf;
-
-    $b->set_from_pixbuf($pixbuf);
+    #$b->set_from_pixbuf($r->get_pixbuf);
+    #$b->window->freeze_updates;
+    # TODO figure out how to keep set_from_pixbuf() from causing expose-event to be called again
+    $b->set_from_pixbuf($r->get_pixbuf);
+    #$b->window->thaw_updates;
 
     #binmode STDOUT, ":utf8";
     #print $svg->xmlify;
 
     return FALSE; # propagate
+}
+
+sub boardclick_cb
+{
+    my ($self, $ebox, $event) = @_;
+    #warn Dumper \@_;
+    my ($x, $y) = ($event->x, $event->y);
+    warn "$x, $y";
+    #my $b = $self->get_widget(
+    return FALSE;
 }
 
 sub gtk_main_quit { Gtk2->main_quit }
