@@ -148,6 +148,7 @@ sub drawmargins
     }
 }
 
+# XXX these are the Scrabble specials, not the WordFeud ones
 my %specials = (
         TW => [ [ 0, 0], [ 7, 0], [14, 0],
                 [ 0, 7],          [14, 7],
@@ -189,6 +190,23 @@ sub makedefaultboard
     }
 }
 
+sub updatescore
+{
+    my ($self) = @_;
+
+    my $game = $private{$self}{_game}->{game};
+    my $players = $game->{players};
+    my @users = sort { $a->{position} <=> $b->{position} } @$players;
+
+    $self->get_widget('labelUser0points')->set_text($users[0]->{score});
+    $self->get_widget('labelUser0'      )->set_text($users[0]->{username});
+
+    $self->get_widget('labelUser1points')->set_text($users[1]->{score});
+    $self->get_widget('labelUser1'      )->set_text($users[1]->{username});
+
+    $self->get_widget('labeltilesleft'  )->set_text($game->{bag_count});
+}
+
 sub loadboard
 {
     my ($self, $board, $game) = @_;
@@ -201,6 +219,9 @@ sub loadboard
         makeletter($board, x => $x, y => $y, letter => $letter, isblank => $isblank);
         $self->{_board}[$y][$x] = $letter;
     }
+
+    $private{$self}{_game} = $game;
+    $self->updatescore;
 }
 
 sub setrack
