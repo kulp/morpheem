@@ -1,13 +1,13 @@
 #!/usr/bin/env perl
 
 package Furries;
-use base qw( Gtk2::GladeXML::Simple );
+use base qw(Gtk2::GladeXML::Simple);
+
+use PAR;
+#use lib "furries";
 
 use strict;
 use warnings;
-
-use PAR;
-use lib "furries";
 
 use charnames ':full';
 use utf8;
@@ -24,6 +24,8 @@ my $glade_file = "board.glade";
 my $square_size = 25;
 my $margin      = 1;
 my $board_size  = 15 * $square_size + 16 * $margin;
+my $rack_width  = 7 * $square_size + 8 * $margin;
+my $rack_height = $square_size + 2 * $margin;
 my $font_size   = 0.39 * $square_size;
 
 # colours lifted from Google Images pictures of real scrabble boards (tile
@@ -38,6 +40,7 @@ my %colours = (
         border => "#20111C",
         center => "#E32745",
         tile   => "#DFBC95",
+        rack   => "#CCAA77",
     );
 
 # TODO other languages
@@ -71,18 +74,7 @@ my %values = (
     z => 10,
 );
 
-
-my $svg = SVG->new(width => $board_size, height => $board_size);
-my $layer = $svg->group(id => 'layer');
-my $board = $layer->group(id => 'board');
-my $rect = $board->rect(
-        id     => "rect_board",
-        style  => "fill:$colours{board}",
-        x      => 0,
-        y      => 0,
-        width  => $board_size,
-        height => $board_size,
-    );
+my %private;
 
 sub makesquare
 {
@@ -132,36 +124,24 @@ sub makeletter
     }
 }
 
-# XXX not useful
-sub makeword
-{
-    my ($board, %args) = @_;
-    my ($x, $y, $dir, $word) = @args{qw(x y dir word)};
-    my $incs = $dir eq "down" ? [ 0, 1 ] : [ 1, 0 ];
-
-    for my $letter (split //, $word) {
-        makeletter($board, %args, letter => $letter, x => $x, y => $y);
-        $x += $incs->[0];
-        $y += $incs->[1];
-    }
-}
-
 sub drawmargins
 {
-    my ($board) = @_;
-    for my $i (0 .. 15) {
-        my $c = $i * ($square_size + $margin);
+    my ($board, %args) = @_;
+
+    for my $y (0 .. $args{y}) {
         $board->rect(
-                id     => "margin_row_$i",
-                y      => $c,
+                id     => "margin_row_$y",
+                y      => $y * ($square_size + $margin),
                 height => $margin,
-                width  => $board_size,
+                width  => $args{board_width},
                 style  => "fill:$colours{border}",
             );
+    }
+    for my $x (0 .. $args{x}) {
         $board->rect(
-                id     => "margin_col_$i",
-                x      => $c,
-                height => $board_size,
+                id     => "margin_col_$x",
+                x      => $x * ($square_size + $margin),
+                height => $args{board_height},
                 width  => $margin,
                 style  => "fill:$colours{border}",
             );
@@ -200,7 +180,8 @@ sub makedefaultboard
 {
     my ($board) = @_;
 
-    makesquare($board, x => 7, y => 7, colour => $colours{center}, text => "\N{BLACK STAR}", textstyle => "font-size:@{[1.1*$font_size]}pt");
+    makesquare($board, x => 7, y => 7, colour => $colours{center}, text =>
+            "\N{BLACK STAR}", textstyle => "font-size:@{[1.1*$font_size]}pt");
     for my $type (keys %specials) {
         for my $c (@{ $specials{$type} }) {
             makesquare($board, x => $c->[0], y => $c->[1], colour => $colours{$type}, text => $type);
@@ -222,6 +203,20 @@ sub loadboard
     }
 }
 
+sub loadrack
+{
+    my ($self, $rack, $game) = @_;
+    my $players = $game->{game}{players};
+    # XXX finding myself this way is a hack
+    my ($me) = grep { $_->{rack} } @$players;
+    my $x = 0;
+    for my $tile (@{ $me->{rack} }) {
+        makeletter($rack, x => $x, y => 0, letter => uc $tile);
+        $self->{_rack}[$x] = $tile;
+        $x++;
+    }
+}
+
 sub new
 {
     my $class = shift;
@@ -236,10 +231,36 @@ sub new
         $self = $class->SUPER::new($tmp->filename);
     }
 
-    drawmargins($board);
+    my $boardsvg = $private{$self}{boardsvg} = SVG->new(width => $board_size, height => $board_size);
+    my $boardlayer = $boardsvg->group(id => 'layer');
+    my $board = $private{$self}{board} = $boardlayer->group(id => 'board');
+    $board->rect(
+            id     => "rect_board",
+            style  => "fill:$colours{board}",
+            x      => 0,
+            y      => 0,
+            width  => $board_size,
+            height => $board_size,
+        );
+    drawmargins($board, x => 15, y => 15, board_height => $board_size, board_width => $board_size);
+
+    my $racksvg = $private{$self}{racksvg} = SVG->new(width => $rack_width, height => $rack_height);
+    my $racklayer = $racksvg->group(id => 'layer');
+    my $rack = $private{$self}{rack} = $racklayer->group(id => 'rack');
+    $rack->rect(
+            id     => "rect_rack",
+            style  => "fill:$colours{rack}",
+            x      => 0,
+            y      => 0,
+            width  => $rack_width,
+            height => $rack_height,
+        );
+    #drawmargins($rack, x => 7, y => 1, board_height => $rack_height, board_width => $rack_width);
+
     makedefaultboard($board);
     my $dump = LoadFile("board.yaml") or die "Failed to load board";
     $self->loadboard($board, $dump->{content} || die "Bad board");
+    $self->loadrack($rack  , $dump->{content} || die "Bad rack");
 
     return $self;
 }
@@ -262,16 +283,37 @@ sub boardarea_draw_cb
     my ($self, $b, $event) = @_;
     warn "drawing $b";
 
-    # TODO cache pixbufs
     my $r = Gnome2::Rsvg::Handle->new;
 
+    my $boardsvg = $private{$self}{boardsvg};
     my $size = $self->_boardsize($b);
     $r->set_size_callback( sub { ($size, $size) });
-    $r->write($svg->xmlify) or die "Failed to write SVG to RSVG handle";
+    $r->write($boardsvg->xmlify) or die "Failed to write SVG to RSVG handle";
+    $r->close or die "Failed to parse SVG";
+    # XXX deprecated, use Cairo
+    #warn $boardsvg->xmlify;
+    $r->get_pixbuf->render_to_drawable($b->window, $b->style->fg_gc($b->state),
+            0, 0, 0, 0, $size, $size, "GDK_RGB_DITHER_NONE", 0, 0);
+
+    return 0; # propagate
+}
+
+sub rackarea_draw_cb
+{
+    my ($self, $b, $event) = @_;
+    warn "drawing $b";
+
+    my $r = Gnome2::Rsvg::Handle->new;
+
+    my $racksvg = $private{$self}{racksvg};
+    my $height = $b->allocation->height;
+    my $width  = $height * 7 + $margin * 8;
+    $r->set_size_callback( sub { ($height, $width) });
+    $r->write($racksvg->xmlify) or die "Failed to write SVG to RSVG handle";
     $r->close or die "Failed to parse SVG";
     # XXX deprecated, use Cairo
     $r->get_pixbuf->render_to_drawable($b->window, $b->style->fg_gc($b->state),
-            0, 0, 0, 0, $size, $size, "GDK_RGB_DITHER_NONE", 0, 0);
+            0, 0, 0, 0, $width, $height, "GDK_RGB_DITHER_NONE", 0, 0);
 
     return 0; # propagate
 }
