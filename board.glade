@@ -51,7 +51,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
               <widget class="GtkMenuItem" id="menuitem1">
                 <property name="visible">True</property>
                 <property name="use_action_appearance">False</property>
-                <property name="label" translatable="yes">_File</property>
+                <property name="label" translatable="yes">_Game</property>
                 <property name="use_underline">True</property>
                 <child>
                   <widget class="GtkMenu" id="menu1">
@@ -113,6 +113,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                     <property name="width_request">200</property>
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
+                    <property name="enable_grid_lines">horizontal</property>
                   </widget>
                 </child>
               </widget>

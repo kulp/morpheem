@@ -13,6 +13,8 @@ use charnames ':full';
 use utf8;
 
 use Gtk2 '-init';
+use Gtk2::Ex::Simple::List;
+
 use Gnome2::Rsvg;
 use JSON;
 use List::Util qw(min);
@@ -73,8 +75,6 @@ my %values = (
     y =>  4,
     z => 10,
 );
-
-my %private;
 
 sub makesquare
 {
@@ -185,7 +185,7 @@ sub updatescore
 {
     my ($self) = @_;
 
-    my $game = $private{$self}{_game}->{game};
+    my $game = $self->{_game}->{game};
     my $players = $game->{players};
     my @users = sort { $a->{position} <=> $b->{position} } @$players;
 
@@ -211,7 +211,7 @@ sub loadboard
         $self->{_board}[$y][$x] = $letter;
     }
 
-    $private{$self}{_game} = $game;
+    $self->{_game} = $game;
     $self->updatescore;
 }
 
@@ -219,9 +219,9 @@ sub setrack
 {
     my ($self, $letters) = @_;
 
-    my $racksvg = $private{$self}{racksvg} = SVG->new(width => $rack_width, height => $rack_height);
+    my $racksvg = $self->{racksvg} = SVG->new(width => $rack_width, height => $rack_height);
     my $racklayer = $racksvg->group(id => 'layer');
-    my $rack = $private{$self}{rack} = $racklayer->group(id => 'rack');
+    my $rack = $self->{rack} = $racklayer->group(id => 'rack');
     $rack->rect(
             id     => "rect_rack",
             style  => "fill:$colours{rack}",
@@ -232,7 +232,7 @@ sub setrack
         );
 
     my $x = 0;
-    $private{$self}{_rack} = $letters;
+    $self->{_rack} = $letters;
     for my $tile (@$letters) {
         makeletter($rack, x => $x, y => 0, letter => uc $tile);
         $x++;
@@ -263,9 +263,9 @@ sub new
         $self = $class->SUPER::new($tmp->filename);
     }
 
-    my $boardsvg = $private{$self}{boardsvg} = SVG->new(width => $board_size, height => $board_size);
+    my $boardsvg = $self->{boardsvg} = SVG->new(width => $board_size, height => $board_size);
     my $boardlayer = $boardsvg->group(id => 'layer');
-    my $board = $private{$self}{board} = $boardlayer->group(id => 'board');
+    my $board = $self->{board} = $boardlayer->group(id => 'board');
     $board->rect(
             id     => "rect_board",
             style  => "fill:$colours{board}",
@@ -280,6 +280,18 @@ sub new
     my $dump = LoadFile("board.yaml") or die "Failed to load board";
     $self->loadboard($board, $dump->{content} || die "Bad board");
     $self->loadrack($dump->{content} || die "Bad rack");
+
+    my $tv = $self->get_widget('treeviewgames');
+    my $sl = Gtk2::Ex::Simple::List->new_from_treeview(
+                    $tv, qw(
+                    Ready       pixbuf
+                    Icon        pixbuf
+                    With        text
+                    ));
+
+    push @{ $sl->{data} },
+         [ $tv->render_icon("gtk-yes", "small-toolbar"), undef, "Anon2345" ],
+         [ $tv->render_icon("gtk-no" , "small-toolbar"), undef, "Anon0123" ];
 
     return $self;
 }
@@ -303,7 +315,7 @@ sub boardarea_draw_cb
 
     my $r = Gnome2::Rsvg::Handle->new;
 
-    my $boardsvg = $private{$self}{boardsvg};
+    my $boardsvg = $self->{boardsvg};
     my $size = $self->_boardsize($b);
 
     $r->set_size_callback( sub { ($size, $size) });
@@ -322,7 +334,7 @@ sub rackarea_draw_cb
 
     my $r = Gnome2::Rsvg::Handle->new;
 
-    my $racksvg = $private{$self}{racksvg};
+    my $racksvg = $self->{racksvg};
     my $height = $b->allocation->height;
     my $width  = $height * 7 + $margin * 8;
     $b->set_size_request($width, $height);
@@ -351,7 +363,7 @@ sub shuffle_rack
     my ($self, $button) = @_;
 
     my @new;
-    my @old = @{ $private{$self}{_rack} };
+    my @old = @{ $self->{_rack} };
     MIX: {
         @new = ();
         my @temp = @old;
