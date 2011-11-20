@@ -28,6 +28,8 @@ my $margin      = 1;
 my $board_size  = 15 * $square_size + 16 * $margin;
 my $font_size   = 0.39 * $square_size;
 
+# colours lifted from Google Images pictures of real scrabble boards (tile
+# colour lightened)
 my %colours = (
         TW => "#FB4C08",
         DL => "#2E89CD",
@@ -39,6 +41,38 @@ my %colours = (
         center => "#E32745",
         tile   => "#DFBC95",
     );
+
+# TODO other languages
+# From Games::Literati
+my %values = (
+    a =>  1,
+    b =>  3,
+    c =>  3,
+    d =>  2,
+    e =>  1,
+    f =>  4,
+    g =>  2,
+    h =>  4,
+    i =>  1,
+    j =>  8,
+    k =>  5,
+    l =>  1,
+    m =>  3,
+    n =>  1,
+    o =>  1,
+    p =>  3,
+    q => 10,
+    r =>  1,
+    s =>  1,
+    t =>  1,
+    u =>  1,
+    v =>  4,
+    w =>  4,
+    x =>  8,
+    y =>  4,
+    z => 10,
+);
+
 
 my $svg = SVG->new(width => $board_size, height => $board_size);
 my $layer = $svg->group(id => 'layer');
@@ -63,7 +97,7 @@ sub makesquare
     my $yc = $y * ($square_size + $margin) + $margin;
 
     my $square = $board->rect(
-            id     => "rect_${x}_${y}",
+            #id     => "rect_${x}_${y}",
             width  => $square_size,
             height => $square_size,
             x      => $xc,
@@ -76,6 +110,36 @@ sub makesquare
             y     => 0.67 * $square_size + $yc,
             style => "font-size:${font_size}pt;fill:white;font-family:monospace;$style",
         )->tspan->cdata($text);
+}
+
+sub makeletter
+{
+    my ($board, %args) = @_;
+    my ($x, $y, $letter) = @args{qw(x y letter)};
+    makesquare($board, %args, colour => $colours{tile}, text => $letter, style => "fill:black");
+
+    my $xc = $x * ($square_size + $margin) + $margin;
+    my $yc = $y * ($square_size + $margin) + $margin;
+    my $font_size = $font_size * 0.5;
+
+    $board->text(
+            x     => 0.50 * $square_size + $xc,
+            y     => 0.77 * $square_size + $yc,
+            style => "font-size:${font_size}pt;fill:black;font-family:monospace",
+        )->tspan->cdata($values{lc $letter});
+}
+
+sub makeword
+{
+    my ($board, %args) = @_;
+    my ($x, $y, $dir, $word) = @args{qw(x y dir word)};
+    my $incs = $dir eq "down" ? [ 0, 1 ] : [ 1, 0 ];
+
+    for my $letter (split //, $word) {
+        makeletter($board, %args, letter => $letter, x => $x, y => $y);
+        $x += $incs->[0];
+        $y += $incs->[1];
+    }
 }
 
 sub drawmargins
@@ -147,35 +211,26 @@ sub new
         }
     }
 
+    makeword($board, x => 4, y => 7, dir => "right", word => "DARREN");
+
     return $self;
 }
 
-sub board_button_press_event_cb
+sub boardarea_draw_cb
 {
-    die "halp";
-}
-
-sub boardimage_draw_cb
-{
-    my ($self) = @_;
-    #warn "exposed";
-    #makesquare($board, x => 1, y => 2, colour => $colours{tile}, text => "D", style => "fill:black;text-align:center");
+    my ($self, $b, $event) = @_;
+    warn "drawing $b";
 
     # TODO cache pixbufs
-    my $b = $self->get_widget('boardimage');
     my $r = Gnome2::Rsvg::Handle->new;
 
-    $r->set_size_callback( sub { return (min($b->allocation->width, $b->allocation->height)) x 2 });
+    my $size = min($b->allocation->width, $b->allocation->height);
+    $r->set_size_callback( sub { ($size, $size) });
     $r->write($svg->xmlify) or die "Failed to write SVG to RSVG handle";
     $r->close or die "Failed to parse SVG";
-    #$b->set_from_pixbuf($r->get_pixbuf);
-    #$b->window->freeze_updates;
-    # TODO figure out how to keep set_from_pixbuf() from causing expose-event to be called again
-    $b->set_from_pixbuf($r->get_pixbuf);
-    #$b->window->thaw_updates;
-
-    #binmode STDOUT, ":utf8";
-    #print $svg->xmlify;
+    # XXX deprecated, use Cairo
+    $r->get_pixbuf->render_to_drawable($b->window, $b->style->fg_gc($b->state),
+            0, 0, 0, 0, $size, $size, "GDK_RGB_DITHER_NONE", 0, 0);
 
     return FALSE; # propagate
 }
