@@ -69,7 +69,7 @@ my %values = (
     u =>  2,
     v =>  4,
     w =>  4,
-    x => 10, # TODO check
+    x =>  8,
     y =>  4,
     z => 10,
 );
@@ -148,33 +148,12 @@ sub drawmargins
     }
 }
 
-# XXX these are the Scrabble specials, not the WordFeud ones
+# four reflection symmetries implicit
 my %specials = (
-        TW => [ [ 0, 0], [ 7, 0], [14, 0],
-                [ 0, 7],          [14, 7],
-                [ 0,14], [ 7,14], [14,14] ],
-        DL => [ [ 3, 0],          [11, 0],
-                [ 6, 2],          [ 8, 2],
-                [ 0, 3], [ 7, 3], [14, 3],
-                [ 2, 6], [ 6, 6], [ 8, 6], [12, 6],
-                [ 3, 7],          [11, 7],
-                [ 2, 8], [ 6, 8], [ 8, 8], [12, 8],
-                [ 0,11], [ 7,11], [14,11],
-                [ 6,12],          [ 8,12],
-                [ 3,14],          [11,14], ],
-        DW => [ [ 1, 1],          [13, 1],
-                [ 2, 2],          [12, 2],
-                [ 3, 3],          [11, 3],
-                [ 4, 4],          [10, 4],
-                [ 4,10],          [10,10],
-                [ 3,11],          [11,11],
-                [ 2,12],          [12,12],
-                [ 1,13],          [13,13], ],
-        TL => [ [ 5, 1],          [ 9, 1],
-                [ 1, 5], [ 5, 5], [ 9, 5], [13, 5],
-                [ 1, 9], [ 5, 9], [ 9, 9], [13, 9],
-                [ 5,13],          [ 9,13], ],
-
+        TW => [ [0, 4], ],
+        DL => [ [0, 7], [1, 1], [2, 6], [4, 6], ] ,
+        DW => [ [2, 2], [3, 7], [4, 4], ], 
+        TL => [ [0, 0], [1, 5], [3, 3], [5, 5], ],
     );
 
 sub makedefaultboard
@@ -185,7 +164,19 @@ sub makedefaultboard
             "\N{BLACK STAR}", textstyle => "font-size:@{[1.1*$font_size]}pt");
     for my $type (keys %specials) {
         for my $c (@{ $specials{$type} }) {
-            makesquare($board, x => $c->[0], y => $c->[1], colour => $colours{$type}, text => $type);
+            my @args = (colour => $colours{$type},
+                        text   => $type,
+                        style  => "opacity:100%");
+            # Construct reflection symmetries. We end up writing over the
+            # diagonals twice, but at 100% opacity we don't care.
+            makesquare($board, x =>      $c->[0], y =>      $c->[1], @args);
+            makesquare($board, x =>      $c->[0], y => 14 - $c->[1], @args);
+            makesquare($board, x => 14 - $c->[0], y =>      $c->[1], @args);
+            makesquare($board, x => 14 - $c->[0], y => 14 - $c->[1], @args);
+            makesquare($board, x =>      $c->[1], y =>      $c->[0], @args);
+            makesquare($board, x =>      $c->[1], y => 14 - $c->[0], @args);
+            makesquare($board, x => 14 - $c->[1], y =>      $c->[0], @args);
+            makesquare($board, x => 14 - $c->[1], y => 14 - $c->[0], @args);
         }
     }
 }
