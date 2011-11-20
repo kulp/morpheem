@@ -292,7 +292,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                               <widget class="GtkLabel" id="labeltilesleft">
                                 <property name="visible">True</property>
                                 <property name="xalign">1</property>
-                                <property name="label" translatable="yes">102</property>
+                                <property name="label" translatable="yes">90</property>
                               </widget>
                               <packing>
                                 <property name="left_attach">1</property>

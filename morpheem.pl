@@ -46,34 +46,13 @@ my %colours = (
     );
 
 # TODO other languages
-# XXX these are WordFeud point values, not Scrabble !
-my %values = (
-    a =>  1,
-    b =>  4,
-    c =>  4,
-    d =>  2,
-    e =>  1,
-    f =>  4,
-    g =>  3,
-    h =>  4,
-    i =>  1,
-    j => 10,
-    k =>  5,
-    l =>  1,
-    m =>  3,
-    n =>  1,
-    o =>  1,
-    p =>  4,
-    q => 10,
-    r =>  1,
-    s =>  1,
-    t =>  1,
-    u =>  2,
-    v =>  4,
-    w =>  4,
-    x =>  8,
-    y =>  4,
-    z => 10,
+# NOTE these are WordFeud point values, not Scrabble
+my %values = qw(
+    a 1   b  4   c 4   d 2   e  1
+    f 4   g  3   h 4   i 1   j 10
+    k 5   l  1   m 3   n 1   o  1
+    p 4   q 10   r 1   s 1   t  1
+    u 2   v  4   w 4   x 8   y  4   z 10
 );
 
 sub makesquare
@@ -149,6 +128,7 @@ sub drawmargins
 }
 
 # four reflection symmetries implicit
+# NOTE these are WordFeud coordinates, not Scrabble
 my %specials = (
         TW => [ [0, 4], ],
         DL => [ [0, 7], [1, 1], [2, 6], [4, 6], ] ,
