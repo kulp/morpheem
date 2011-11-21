@@ -160,6 +160,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                         <property name="visible">True</property>
                         <property name="app_paintable">True</property>
                         <property name="events">GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_STRUCTURE_MASK</property>
+                        <signal name="button_press_event" handler="rackclick_cb" swapped="no"/>
                         <signal name="expose_event" handler="rackarea_draw_cb" swapped="no"/>
                       </widget>
                     </child>
@@ -219,6 +220,27 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                             <property name="position">1</property>
                           </packing>
                         </child>
+                        <child>
+                          <widget class="GtkAlignment" id="alignment6">
+                            <property name="visible">True</property>
+                            <property name="yscale">0</property>
+                            <child>
+                              <widget class="GtkButton" id="buttonclear">
+                                <property name="label" translatable="yes">_Clear</property>
+                                <property name="visible">True</property>
+                                <property name="sensitive">False</property>
+                                <property name="can_focus">True</property>
+                                <property name="receives_default">True</property>
+                                <property name="use_action_appearance">False</property>
+                                <property name="use_underline">True</property>
+                                <signal name="clicked" handler="buttonclear_clicked_cb" swapped="no"/>
+                              </widget>
+                            </child>
+                          </widget>
+                          <packing>
+                            <property name="position">2</property>
+                          </packing>
+                        </child>
                       </widget>
                       <packing>
                         <property name="padding">5</property>
@@ -269,6 +291,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                                 <property name="visible">True</property>
                                 <property name="xalign">1</property>
                                 <property name="label" translatable="yes">0</property>
+                                <property name="single_line_mode">True</property>
+                                <property name="max_width_chars">4</property>
                               </widget>
                               <packing>
                                 <property name="left_attach">1</property>
@@ -280,6 +304,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                                 <property name="visible">True</property>
                                 <property name="xalign">1</property>
                                 <property name="label" translatable="yes">0</property>
+                                <property name="single_line_mode">True</property>
+                                <property name="max_width_chars">4</property>
                               </widget>
                               <packing>
                                 <property name="left_attach">1</property>
@@ -293,6 +319,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                                 <property name="visible">True</property>
                                 <property name="xalign">1</property>
                                 <property name="label" translatable="yes">90</property>
+                                <property name="justify">right</property>
+                                <property name="single_line_mode">True</property>
+                                <property name="max_width_chars">3</property>
                               </widget>
                               <packing>
                                 <property name="left_attach">1</property>

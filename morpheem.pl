@@ -58,15 +58,14 @@ my %values = qw(
 sub makesquare
 {
     my ($board, %args) = @_;
-    my ($x, $y, $squarestyle, $textstyle, $colour, $text) = @args{qw(x y squarestyle textstyle colour text)};
-    $squarestyle ||= "";
-    $textstyle ||= "";
-    $text ||= "";
+    my ($x, $y, $squarestyle, $textstyle, $colour, $text, $prefix) =
+        map { defined() ? $_ : "" } @args{qw(x y squarestyle textstyle colour text prefix)};
 
     my $xc = $x * ($square_size + $margin) + $margin;
     my $yc = $y * ($square_size + $margin) + $margin;
 
-    my $square = $board->rect(
+    my $group = $board->group(id => "${prefix}tile_${x}_${y}");
+    my $square = $group->rect(
             # TODO ids ?
             #id     => "rect_${x}_${y}",
             width  => $square_size,
@@ -76,31 +75,36 @@ sub makesquare
             style  => "fill:$colour;$squarestyle",
         );
 
-    $board->text(
+    $group->text(
             x     => 0.20 * $square_size + $xc,
             y     => 0.67 * $square_size + $yc,
             style => "font-size:${font_size}pt;fill:white;font-family:monospace;$textstyle",
         )->tspan->cdata($text);
+
+    return $group;
 }
 
 sub makeletter
 {
     my ($board, %args) = @_;
     my ($x, $y, $letter, $isblank) = @args{qw(x y letter isblank)};
-    makesquare($board, %args, colour => $colours{tile}, text => uc $letter,
-            squarestyle => "fill-opacity:85%", textstyle => "fill:black");
+    my $group = makesquare($board, %args, colour => $colours{tile}, prefix =>
+            "letter_", text => uc $letter, squarestyle => "fill-opacity:85%",
+            textstyle => "fill:black");
 
     my $xc = $x * ($square_size + $margin) + $margin;
     my $yc = $y * ($square_size + $margin) + $margin;
     my $font_size = $font_size * 0.5;
 
     unless ($isblank) {
-        $board->text(
+        $group->text(
                 x     => 0.55 * $square_size + $xc,
                 y     => 0.77 * $square_size + $yc,
                 style => "font-size:${font_size}pt;fill:black;font-family:monospace",
             )->tspan->cdata($values{lc $letter});
     }
+
+    return $group;
 }
 
 sub drawmargins
@@ -140,23 +144,25 @@ sub makedefaultboard
 {
     my ($board) = @_;
 
-    makesquare($board, x => 7, y => 7, colour => $colours{center}, text =>
-            "\N{BLACK STAR}", textstyle => "font-size:@{[1.1*$font_size]}pt");
+    makesquare($board, x => 7, y => 7, colour => $colours{center}, prefix =>
+            "center_", text => "\N{BLACK STAR}", textstyle =>
+            "font-size:@{[1.1*$font_size]}pt");
     for my $type (keys %specials) {
         for my $c (@{ $specials{$type} }) {
+            my ($x, $y) = @$c;
             my @args = (colour => $colours{$type},
                         text   => $type,
-                        style  => "opacity:100%");
+                        style  => "fill-opacity:100%");
             # Construct reflection symmetries. We end up writing over the
             # diagonals twice, but at 100% opacity we don't care.
-            makesquare($board, x =>      $c->[0], y =>      $c->[1], @args);
-            makesquare($board, x =>      $c->[0], y => 14 - $c->[1], @args);
-            makesquare($board, x => 14 - $c->[0], y =>      $c->[1], @args);
-            makesquare($board, x => 14 - $c->[0], y => 14 - $c->[1], @args);
-            makesquare($board, x =>      $c->[1], y =>      $c->[0], @args);
-            makesquare($board, x =>      $c->[1], y => 14 - $c->[0], @args);
-            makesquare($board, x => 14 - $c->[1], y =>      $c->[0], @args);
-            makesquare($board, x => 14 - $c->[1], y => 14 - $c->[0], @args);
+            makesquare($board, x =>      $x, y =>      $y, @args, prefix => "octant_a_");
+            makesquare($board, x =>      $x, y => 14 - $y, @args, prefix => "octant_b_");
+            makesquare($board, x => 14 - $x, y =>      $y, @args, prefix => "octant_c_");
+            makesquare($board, x => 14 - $x, y => 14 - $y, @args, prefix => "octant_d_");
+            makesquare($board, x =>      $y, y =>      $x, @args, prefix => "octant_e_");
+            makesquare($board, x =>      $y, y => 14 - $x, @args, prefix => "octant_f_");
+            makesquare($board, x => 14 - $y, y =>      $x, @args, prefix => "octant_g_");
+            makesquare($board, x => 14 - $y, y => 14 - $x, @args, prefix => "octant_h_");
         }
     }
 }
@@ -183,10 +189,7 @@ sub loadboard
     my ($self, $board, $game) = @_;
     for my $tile (@{ $game->{game}{tiles} }) {
         # TODO handle blanks
-        my $x = $tile->[0];
-        my $y = $tile->[1];
-        my $letter = $tile->[2];
-        my $isblank = $tile->[3];
+        my ($x, $y, $letter, $isblank) = @$tile;
         makeletter($board, x => $x, y => $y, letter => $letter, isblank => $isblank);
         $self->{_board}[$y][$x] = $letter;
     }
@@ -198,6 +201,7 @@ sub loadboard
 sub setrack
 {
     my ($self, $letters) = @_;
+    $letters ||= $self->{_rack};
 
     my $racksvg = $self->{racksvg} = SVG->new(width => $rack_width, height => $rack_height);
     my $racklayer = $racksvg->group(id => 'layer');
@@ -227,6 +231,8 @@ sub loadrack
     # XXX finding myself this way is a hack
     my ($me) = grep { $_->{rack} } @$players;
     $self->setrack($me->{rack});
+
+    $self->{_rackbak} = [ @{ $self->{_rack} } ];
 }
 
 sub new
@@ -334,7 +340,53 @@ sub boardclick_cb
     my $size = $self->_cellsize;
     my ($x, $y) = map { int $_ / $size } ($event->x, $event->y);
     # x and y are in cell coordinates
-    warn "$x, $y";
+    warn "$x, $y = $self->{_board}[$y][$x]";
+
+    if (defined $self->{_hotletter}) {
+        # XXX implement isblank
+        my $isblank = 0;
+        # XXX abstract naming convention
+        my $already = $self->{boardsvg}->getElementByID("letter_tile_${x}_${y}");
+        # TODO support swapping with existing tile ?
+        return if $already;
+
+        my $group = makeletter($self->{boardsvg}, x => $x, y => $y, letter => $self->{_hotletter}, isblank => $isblank);
+        $self->get_widget('buttonclear')->sensitive(1);
+
+        push @{ $self->{_temptiles} }, $group;
+        $self->_back_out(delete $self->{_temprack});
+
+        splice @{ $self->{_rack} }, $self->{_hotindex}, 1;
+        $self->setrack;
+
+        $self->{_hotindex } = undef;
+        $self->{_hotletter} = undef;
+
+        $self->get_widget('rackarea')->queue_draw;
+        $self->get_widget('boardarea')->queue_draw;
+        $self->get_widget('buttonclear')->parent->queue_draw;
+    }
+
+    return 0;
+}
+
+sub rackclick_cb
+{
+    my ($self, $rack, $event) = @_;
+    my ($x) = int $event->x / $rack->allocation->height;
+    warn "$x = $self->{_rack}[$x]";
+
+    # TODO allow multiple selection for exchange
+    $self->_back_out(delete $self->{_temprack});
+    return if $x >= @{ $self->{_rack} };
+
+    my $group = makesquare($self->{racksvg}, x => $x, y => 0, squarestyle => "fill-opacity:25%", colour => "red");
+    push @{ $self->{_temprack} }, $group;
+    $self->get_widget('rackarea')->queue_draw;
+
+    $self->{_hotindex } = $x;
+    $self->{_hotletter} = $self->{_rack}[$x];
+
     return 0;
 }
 
@@ -342,17 +394,20 @@ sub shuffle_rack
 {
     my ($self, $button) = @_;
 
+    $self->{_hotindex } = undef;
+    $self->{_hotletter} = undef;
+
     my @new;
     my @old = @{ $self->{_rack} };
+    return if @old <= 1;
     MIX: {
         @new = ();
         my @temp = @old;
-        while (@temp) {
-            push @new, splice @temp, rand @temp;
-        }
+        push @new, splice @temp, rand +@temp, 1 while @temp;
 
         # ensure we don't get the same permutation (feels like a bug to the user)
         for my $i (0 .. $#new) {
+            # NOTE we could exhaust entropy here in theory
             last MIX if $new[$i] ne $old[$i];
         }
         redo MIX;
@@ -360,6 +415,36 @@ sub shuffle_rack
 
     $self->setrack(\@new);
     $self->get_widget('rackarea')->queue_draw;
+}
+
+sub _back_out
+{
+    my ($self, $list) = @_;
+    if ($list and my @tiles = @$list) {
+        while (my $tile = pop @tiles) {
+            $tile->getParentElement->removeChild($tile);
+        }
+    }
+}
+
+sub buttonclear_clicked_cb
+{
+    my ($self, $button) = @_;
+    warn "clear";
+
+    # TODO when does _rackbak get updated ?
+    $self->setrack([ @{ $self->{_rackbak} } ]);
+
+    $self->_back_out(delete $self->{_temptiles});
+    $self->_back_out(delete $self->{_temprack});
+
+    $self->get_widget('rackarea')->queue_draw;
+    $self->get_widget('boardarea')->queue_draw;
+
+    $self->get_widget('buttonclear')->sensitive(0);
+    $self->get_widget('buttonclear')->queue_draw;
+
+    return 0; # propagate ?
 }
 
 sub gtk_main_quit  { Gtk2->main_quit }
