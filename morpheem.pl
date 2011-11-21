@@ -353,7 +353,6 @@ sub boardclick_cb
         my $group = makeletter($self->{boardsvg}, x => $x, y => $y, letter => $letter, isblank => $isblank);
         $self->get_widget('buttonclear')->sensitive(1);
 
-        #push @{ $self->{_temptiles} }, $group;
         $self->{_temptiles}{$group->getElementID} = { letter => $letter, group => $group };
         $self->_back_out(delete $self->{_temprack});
 
@@ -388,12 +387,23 @@ sub rackclick_cb
     $self->_back_out(delete $self->{_temprack});
     return if $x >= @{ $self->{_rack} };
 
-    my $group = makesquare($self->{racksvg}, x => $x, y => 0, squarestyle => "fill-opacity:25%", colour => "red");
-    push @{ $self->{_temprack} }, $group;
-    $self->get_widget('rackarea')->queue_draw;
+    if (defined $self->{_hotletter}) {
+        my $r = $self->{_rack};
+        ($r->[$x], $r->[$self->{_hotindex}]) = ($r->[$self->{_hotindex}], $r->[$x]);
+        $self->setrack;
 
-    $self->{_hotindex } = $x;
-    $self->{_hotletter} = $self->{_rack}[$x];
+        $self->{_hotindex } = undef;
+        $self->{_hotletter} = undef;
+    } else {
+        my $group = makesquare($self->{racksvg}, x => $x, y => 0, squarestyle
+                => "fill-opacity:25%", colour => "red");
+        push @{ $self->{_temprack} }, $group;
+
+        $self->{_hotindex } = $x;
+        $self->{_hotletter} = $self->{_rack}[$x];
+    }
+
+    $self->get_widget('rackarea')->queue_draw;
 
     return 0;
 }
