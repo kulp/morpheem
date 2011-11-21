@@ -340,7 +340,6 @@ sub boardclick_cb
     my $size = $self->_cellsize;
     my ($x, $y) = map { int $_ / $size } ($event->x, $event->y);
     # x and y are in cell coordinates
-    warn "$x, $y = $self->{_board}[$y][$x]";
 
     if (defined $self->{_hotletter}) {
         # XXX implement isblank
@@ -350,10 +349,12 @@ sub boardclick_cb
         # TODO support swapping with existing tile ?
         return if $already;
 
-        my $group = makeletter($self->{boardsvg}, x => $x, y => $y, letter => $self->{_hotletter}, isblank => $isblank);
+        my $letter = $self->{_hotletter};
+        my $group = makeletter($self->{boardsvg}, x => $x, y => $y, letter => $letter, isblank => $isblank);
         $self->get_widget('buttonclear')->sensitive(1);
 
-        push @{ $self->{_temptiles} }, $group;
+        #push @{ $self->{_temptiles} }, $group;
+        $self->{_temptiles}{$group->getElementID} = { letter => $letter, group => $group };
         $self->_back_out(delete $self->{_temprack});
 
         splice @{ $self->{_rack} }, $self->{_hotindex}, 1;
@@ -361,11 +362,19 @@ sub boardclick_cb
 
         $self->{_hotindex } = undef;
         $self->{_hotletter} = undef;
-
-        $self->get_widget('rackarea')->queue_draw;
-        $self->get_widget('boardarea')->queue_draw;
-        $self->get_widget('buttonclear')->parent->queue_draw;
+    } else {
+        # take a letter back
+        my $id = "letter_tile_${x}_${y}";
+        if (my $hash = $self->{_temptiles}{$id}) {
+            my $letter = $hash->{letter};
+            $self->_back_out([ $hash->{group} ]);
+            $self->setrack([ @{ $self->{_rack} }, $letter ]);
+        }
     }
+
+    $self->get_widget('rackarea')->queue_draw;
+    $self->get_widget('boardarea')->queue_draw;
+    $self->get_widget('buttonclear')->parent->queue_draw;
 
     return 0;
 }
@@ -374,7 +383,6 @@ sub rackclick_cb
 {
     my ($self, $rack, $event) = @_;
     my ($x) = int $event->x / $rack->allocation->height;
-    warn "$x = $self->{_rack}[$x]";
 
     # TODO allow multiple selection for exchange
     $self->_back_out(delete $self->{_temprack});
@@ -430,12 +438,11 @@ sub _back_out
 sub buttonclear_clicked_cb
 {
     my ($self, $button) = @_;
-    warn "clear";
 
     # TODO when does _rackbak get updated ?
     $self->setrack([ @{ $self->{_rackbak} } ]);
 
-    $self->_back_out(delete $self->{_temptiles});
+    $self->_back_out([ map $_->{group}, values %{ delete $self->{_temptiles} } ]);
     $self->_back_out(delete $self->{_temprack});
 
     $self->get_widget('rackarea')->queue_draw;
