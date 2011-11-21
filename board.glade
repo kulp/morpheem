@@ -181,12 +181,32 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                         <property name="spacing">5</property>
                         <property name="homogeneous">True</property>
                         <child>
+                          <widget class="GtkAlignment" id="alignment7">
+                            <property name="visible">True</property>
+                            <property name="yscale">0</property>
+                            <child>
+                              <widget class="GtkButton" id="buttonplay">
+                                <property name="label" translatable="yes" comments="skip turn">_Play</property>
+                                <property name="visible">True</property>
+                                <property name="can_focus">True</property>
+                                <property name="receives_default">True</property>
+                                <property name="use_action_appearance">False</property>
+                                <property name="use_underline">True</property>
+                                <signal name="clicked" handler="buttonplay_clicked_cb" swapped="no"/>
+                              </widget>
+                            </child>
+                          </widget>
+                          <packing>
+                            <property name="position">0</property>
+                          </packing>
+                        </child>
+                        <child>
                           <widget class="GtkAlignment" id="alignment2">
                             <property name="visible">True</property>
                             <property name="yscale">0</property>
                             <child>
                               <widget class="GtkButton" id="buttonpass">
-                                <property name="label" translatable="yes" comments="skip turn">_Pass</property>
+                                <property name="label" translatable="yes" comments="skip turn">P_ass</property>
                                 <property name="visible">True</property>
                                 <property name="sensitive">False</property>
                                 <property name="can_focus">True</property>
@@ -197,7 +217,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                             </child>
                           </widget>
                           <packing>
-                            <property name="position">0</property>
+                            <property name="position">1</property>
                           </packing>
                         </child>
                         <child>
@@ -217,7 +237,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                             </child>
                           </widget>
                           <packing>
-                            <property name="position">1</property>
+                            <property name="position">2</property>
                           </packing>
                         </child>
                         <child>
@@ -238,7 +258,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                             </child>
                           </widget>
                           <packing>
-                            <property name="position">2</property>
+                            <property name="position">3</property>
                           </packing>
                         </child>
                       </widget>

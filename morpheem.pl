@@ -18,6 +18,7 @@ use Gtk2::Ex::Simple::List;
 use Gnome2::Rsvg;
 use JSON;
 use List::Util qw(min);
+use List::MoreUtils qw(uniq);
 use SVG;
 use YAML qw(LoadFile);
 
@@ -353,7 +354,15 @@ sub boardclick_cb
         my $group = makeletter($self->{boardsvg}, x => $x, y => $y, letter => $letter, isblank => $isblank);
         $self->get_widget('buttonclear')->sensitive(1);
 
-        $self->{_temptiles}{$group->getElementID} = { letter => $letter, group => $group };
+        my $id = $group->getElementID;
+        $self->{_temptiles}{$id} = {
+            letter  => $letter,
+            group   => $group,
+            x       => $x,
+            y       => $y,
+            id      => $id,
+            isblank => $isblank ? JSON::true : JSON::false,
+        };
         $self->_back_out(delete $self->{_temprack});
 
         splice @{ $self->{_rack} }, $self->{_hotindex}, 1;
@@ -364,7 +373,7 @@ sub boardclick_cb
     } else {
         # take a letter back
         my $id = "letter_tile_${x}_${y}";
-        if (my $hash = $self->{_temptiles}{$id}) {
+        if (my $hash = delete $self->{_temptiles}{$id}) {
             my $letter = $hash->{letter};
             $self->_back_out([ $hash->{group} ]);
             $self->setrack([ @{ $self->{_rack} }, $letter ]);
@@ -440,9 +449,106 @@ sub _back_out
     my ($self, $list) = @_;
     if ($list and my @tiles = @$list) {
         while (my $tile = pop @tiles) {
-            $tile->getParentElement->removeChild($tile);
+            $tile->getParentElement->removeChild($tile) if $tile->getParentElement;
         }
     }
+}
+
+sub _find_words
+{
+    sub num { $a <=> $b }
+
+    my ($self, $tiles) = @_;
+    $tiles ||= [ values %{ $self->{_temptiles} } ];
+    return () unless @$tiles;
+
+    my @words;
+
+    # First, check that the move is legal
+    my @xs = sort { $b->{x} - $a->{x} } @$tiles;
+    my @ys = sort { $b->{y} - $a->{y} } @$tiles;
+    my $dx = $xs[0]->{x} - $xs[-1]->{x};
+    my $dy = $ys[0]->{y} - $ys[-1]->{y};
+
+    return () if $dx and $dy;   # all in same axis
+
+    # TODO handle first move specially
+
+    my @map;
+    for my $tile (@$tiles) {
+        $map[$tile->{y}][$tile->{x}] = $tile->{letter};
+    }
+
+    # TODO fix warnings
+
+    my $board = $self->{_board};
+
+    if (!$dx) {
+        my $x = $xs[0]->{x};
+        for my $y ($xs[0]->{y} .. $xs[-1]->{y}) {
+            return () if not $board->[$y][$x] and not $map[$y][$x];
+        }
+    }
+
+    if (!$dy) {
+        my $y = $ys[0]->{y};
+        for my $x ($ys[0]->{x} .. $ys[-1]->{x}) {
+            return () if not $board->[$y][$x] and not $map[$y][$x];
+        }
+    }
+
+    push @words, join "", map $_->{letter}, @xs if !$dx && $dx == @xs - 1;
+    push @words, join "", map $_->{letter}, @ys if !$dy && $dy == @ys - 1;
+
+    for my $tile (@xs) {
+        my $y = $tile->{y};
+        my $xSTART = my $xEND = my $x = $tile->{x};
+        1 while $xSTART >  0 && ($board->[$y][--$xSTART] || $map[$y][$xSTART]);
+        1 while $xEND   < 14 && ($board->[$y][++$xEND  ] || $map[$y][$xEND  ]);
+
+        # TODO why is `grep defined' needed
+        my @stuff = grep defined, map { $board->[$y][$_] || $map[$y][$_] } $xSTART .. $xEND;
+        push @words, join "", @stuff;
+    }
+
+    for my $tile (@ys) {
+        my $x = $tile->{x};
+        my $ySTART = my $yEND = my $y = $tile->{y};
+        1 while $ySTART >  0 && ($board->[--$ySTART][$x] || $map[$ySTART][$x]);
+        1 while $yEND   < 14 && ($board->[++$yEND  ][$x] || $map[$yEND  ][$x]);
+
+        # TODO why is `grep defined' needed
+        my @stuff = grep defined, map { $board->[$_][$x] || $map[$_][$x] } $ySTART .. $yEND;
+        push @words, join "", @stuff;
+    }
+
+    return uniq grep { length > 1 } @words;
+}
+
+sub _play_move
+{
+    my ($self) = @_;
+
+    my @tiles = map {
+        [ $_->{x}, $_->{y}, $_->{letter}, $_->{isblank} ? JSON::true : JSON::false ]
+    } values %{ $self->{_temptiles} };
+    my @words = $self->_find_words;
+    # TODO complain loudly to the user when there are no words
+    return unless @words;
+
+    my %data = (
+            ruleset => 0,
+            words   => \@words,
+            move    => \@tiles,
+        );
+
+    warn encode_json(\%data);
+}
+
+sub buttonplay_clicked_cb
+{
+    my ($self, $button) = @_;
+    $self->_play_move;
 }
 
 sub buttonclear_clicked_cb
