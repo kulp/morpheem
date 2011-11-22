@@ -395,7 +395,7 @@ sub boardarea_draw_cb
 
     my $game = $self->{_currentgame};
 
-    my $boardsvg = $game->{_svg}{board};
+    my $boardsvg = $game->{_svg}{board} or return 1; # no propagate
     my $size = $self->_boardsize($b);
 
     $r->set_size_callback( sub { ($size, $size) });
@@ -415,7 +415,7 @@ sub rackarea_draw_cb
     my $r = Gnome2::Rsvg::Handle->new;
     my $game = $self->{_currentgame};
 
-    my $racksvg = $game->{_svg}{rack};
+    my $racksvg = $game->{_svg}{rack} or return 1; # no propagate
     my $height = $b->allocation->height;
     my $width  = $height * 7 + $margin * 8;
     $b->set_size_request($width, $height);
@@ -519,7 +519,7 @@ sub shuffle_rack
 {
     my ($self, $button) = @_;
 
-    my $game = $self->{_currentgame};
+    my $game = $self->{_currentgame} or return;
 
     $self->{_hotindex } = undef;
     $self->{_hotletter} = undef;
