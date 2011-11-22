@@ -13,7 +13,8 @@ use charnames ':full';
 use utf8;
 
 use Gtk2 '-init';
-use Gtk2::Ex::Simple::List;
+use Gtk2::SimpleList;
+#use Gtk2::Ex::Simple::List;
 
 use Gnome2::Rsvg;
 use JSON;
@@ -203,7 +204,7 @@ sub setrack
     my ($self, $game, $letters) = @_;
     $letters ||= $game->{_rack};
 
-    my $racksvg = $self->{racksvg} = SVG->new(width => $rack_width, height => $rack_height);
+    my $racksvg = $game->{_svg}{rack} = SVG->new(width => $rack_width, height => $rack_height);
     my $racklayer = $racksvg->group(id => 'layer');
     my $rack = $self->{rack} = $racklayer->group(id => 'rack');
     $rack->rect(
@@ -261,17 +262,32 @@ sub loadgame
 
     $self->{_games}{ $game->{id} } = $game;
 
-    my $sl    = $self->{_list};
-    my $yes   = $sl->render_icon("gtk-yes", "small-toolbar");
-    my $no    = $sl->render_icon("gtk-no" , "small-toolbar");
-    my @icons = ($no, $yes);
-
+    my $sl          = $self->{_list};
+    my $yes         = $sl->render_icon("gtk-yes", "small-toolbar");
+    my $no          = $sl->render_icon("gtk-no" , "small-toolbar");
+    my @icons       = ($no, $yes);
     my $running     = $game->{is_running};
     my $currplayer  = $game->{current_player};
     my $myturn      = !!($running && $currplayer == $me->{position});
     my $otherplayer = $players->[1 - $me->{position}];
-    push @{ $sl->{data} },
+    my $data        = $sl->{data};
+
+    push @$data, 
         [ $game->{id}, $icons[$myturn], undef, $otherplayer->{username} ];
+
+    $sl->select($#$data);
+}
+
+sub row_activated_cb
+{
+    my ($self, $sl, $path, $column) = @_;
+    my $row_ref = $sl->get_row_data_from_path ($path);
+    my $gameid  = $row_ref->[0];
+    my $game    = $self->{_games}{$gameid};
+
+    $self->{_currentgame} = $game;
+    $self->get_widget('rackarea')->queue_draw;
+    $self->get_widget('boardarea')->queue_draw;
 }
 
 sub new
@@ -288,7 +304,7 @@ sub new
         $self = $class->SUPER::new($tmp->filename);
     }
 
-    my $sl = $self->{_list} = Gtk2::Ex::Simple::List->new_from_treeview(
+    my $sl = $self->{_list} = Gtk2::SimpleList->new_from_treeview(
             $self->get_widget('treeviewgames'),
             Id    => 'text',
             Ready => 'pixbuf',
@@ -296,14 +312,18 @@ sub new
             With  => 'text',
         );
 
+    $sl->get_selection->set_mode("browse"); # always have one selected
     $sl->get_column(0)->set(visible => 0);
+    $sl->signal_connect(row_activated => sub { $self->row_activated_cb(@_) });
 
     my $me = LoadFile("me.yaml") or die "Failed to load self";
     $self->{_me} = $me->{content};
 
-    my $dump = LoadFile("board.yaml") or die "Failed to load board";
-    my $game = $dump->{content}{game};
-    $self->loadgame($game);
+    for my $file (@ARGV) {
+        my $dump = LoadFile($file);
+        my $game = $dump->{content}{game};
+        $self->loadgame($game);
+    }
 
     return $self;
 }
@@ -347,8 +367,9 @@ sub rackarea_draw_cb
     my ($self, $b, $event) = @_;
 
     my $r = Gnome2::Rsvg::Handle->new;
+    my $game = $self->{_currentgame};
 
-    my $racksvg = $self->{racksvg};
+    my $racksvg = $game->{_svg}{rack};
     my $height = $b->allocation->height;
     my $width  = $height * 7 + $margin * 8;
     $b->set_size_request($width, $height);
@@ -435,7 +456,7 @@ sub rackclick_cb
         $self->{_hotindex } = undef;
         $self->{_hotletter} = undef;
     } else {
-        my $group = makesquare($self->{racksvg}, x => $x, y => 0, squarestyle
+        my $group = makesquare($game->{_svg}{rack}, x => $x, y => 0, squarestyle
                 => "fill-opacity:25%", colour => "red");
         push @{ $self->{_temprack} }, $group;
 
