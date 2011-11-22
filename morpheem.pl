@@ -15,11 +15,13 @@ use utf8;
 use Gtk2 '-init';
 use Gtk2::SimpleList;
 
+use File::Temp;
 use Gnome2::Rsvg;
 use JSON;
-use List::Util qw(min sum);
 use List::MoreUtils qw(uniq);
+use List::Util qw(min sum);
 use SVG;
+use WWW::Mechanize::Gzip;
 use YAML qw(LoadFile);
 
 my $glade_file = "board.glade";
@@ -30,6 +32,9 @@ my $board_size  = 15 * $square_size + 16 * $margin;
 my $rack_width  = 7 * $square_size + 8 * $margin;
 my $rack_height = $square_size + 2 * $margin;
 my $font_size   = 0.39 * $square_size;
+
+# XXX
+my $pixels = 60;
 
 # colours lifted from Google Images pictures of real scrabble boards (tile
 # colour lightened)
@@ -60,7 +65,7 @@ sub makesquare
 {
     my ($board, %args) = @_;
     my ($x, $y, $squarestyle, $textstyle, $colour, $text, $prefix) =
-        map { defined() ? $_ : "" } @args{qw(x y squarestyle textstyle colour text prefix)};
+        map { defined($_) ? $_ : "" } @args{qw(x y squarestyle textstyle colour text prefix)};
 
     my $xc = $x * ($square_size + $margin) + $margin;
     my $yc = $y * ($square_size + $margin) + $margin;
@@ -268,11 +273,24 @@ sub loadgame
     my $running     = $game->{is_running};
     my $currplayer  = $game->{current_player};
     my $myturn      = !!($running && $currplayer == $me->{position});
+    # TODO support more than two players ?
     my $otherplayer = $players->[1 - $me->{position}];
     my $data        = $sl->{data};
 
+    my $small_pixbuf;
+    # TODO make image fetching asynch
+    # TODO don't fetch the same image more than once
+    eval {
+        my $file = File::Temp->new;
+        my $w = $self->{_www};
+        $w->get("http://avatars.wordfeud.com/$pixels/$otherplayer->{id}");
+        $w->save_content($file);
+        my $large_pixbuf = Gtk2::Gdk::Pixbuf->new_from_file($file);
+        $small_pixbuf = $large_pixbuf->scale_simple(48, 48, "GDK_INTERP_HYPER");
+    };
+
     push @$data,
-        [ $game->{id}, $icons[$myturn], undef, $otherplayer->{username} ];
+        [ $game->{id}, $icons[$myturn], $small_pixbuf, $otherplayer->{username} ];
 
     $sl->select($#$data);
 }
@@ -303,12 +321,23 @@ sub new
         $self = $class->SUPER::new($tmp->filename);
     }
 
+    my $w = $self->{_www} = WWW::Mechanize::GZip->new(
+            # XXX lies
+            agent           => 'WebFeudClient/1.2.11 (iOS)',
+            default_headers => HTTP::Headers->new(
+                    # XXX Content_Type here doesn't get respected ?
+                    Content_Type    => 'application/json',
+                    Accept_Encoding => 'gzip',
+                    Connection      => 'keep-alive',
+                ),
+        );
+
     my $sl = $self->{_list} = Gtk2::SimpleList->new_from_treeview(
             $self->get_widget('treeviewgames'),
-            Id    => 'text',
-            Ready => 'pixbuf',
-            Icon  => 'pixbuf',
-            With  => 'text',
+            id     => 'text',
+            State  => 'pixbuf',
+            Avatar => 'pixbuf',
+            User   => 'text',
         );
 
     $sl->get_selection->set_mode("browse"); # always have one selected
