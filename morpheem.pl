@@ -14,7 +14,6 @@ use utf8;
 
 use Gtk2 '-init';
 use Gtk2::SimpleList;
-#use Gtk2::Ex::Simple::List;
 
 use Gnome2::Rsvg;
 use JSON;
@@ -188,12 +187,12 @@ sub updatescore
 sub loadboard
 {
     my ($self, $game) = @_;
-    my $board = $game->{_board};
+    my $board = $game->{_boardlayer};
     for my $tile (@{ $game->{tiles} }) {
         # TODO handle blanks
         my ($x, $y, $letter, $isblank) = @$tile;
         makeletter($board, x => $x, y => $y, letter => $letter, isblank => $isblank);
-        $self->{_board}[$y][$x] = $letter;
+        $game->{_board}[$y][$x] = $letter;
     }
 
     $self->updatescore($game);
@@ -244,7 +243,7 @@ sub loadgame
 
     my $boardsvg = $game->{_svg}{board} = SVG->new(width => $board_size, height => $board_size);
     my $boardlayer = $boardsvg->group(id => 'layer');
-    my $board = $game->{_board} = $boardlayer->group(id => 'board');
+    my $board = $game->{_boardlayer} = $boardlayer->group(id => 'board');
     $board->rect(
             id     => "rect_board",
             style  => "fill:$colours{board}",
@@ -272,7 +271,7 @@ sub loadgame
     my $otherplayer = $players->[1 - $me->{position}];
     my $data        = $sl->{data};
 
-    push @$data, 
+    push @$data,
         [ $game->{id}, $icons[$myturn], undef, $otherplayer->{username} ];
 
     $sl->select($#$data);
@@ -481,15 +480,18 @@ sub shuffle_rack
     my @new;
     my @old = @{ $game->{_rack} };
     return if @old <= 1;
+    my $tries = 0;
     MIX: {
         @new = ();
         my @temp = @old;
         push @new, splice @temp, rand +@temp, 1 while @temp;
 
-        # ensure we don't get the same permutation (feels like a bug to the user)
+        # try to not get the same permutation (feels like a bug to the user)
+        # we don't run forever because if we have all the same tile the loop
+        # will never complete, and we don't want to check for this explicitly
         for my $i (0 .. $#new) {
             # NOTE we could exhaust entropy here in theory
-            last MIX if $new[$i] ne $old[$i];
+            last MIX if $new[$i] ne $old[$i] or $tries++ > 10;
         }
         redo MIX;
     }
@@ -535,7 +537,7 @@ sub _find_words
 
     # TODO fix warnings
 
-    my $board = $self->{_board};
+    my $board = $game->{_board};
 
     if (!$dx) {
         my $x = $xs[0]->{x};
