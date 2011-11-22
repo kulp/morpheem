@@ -17,7 +17,7 @@ use Gtk2::Ex::Simple::List;
 
 use Gnome2::Rsvg;
 use JSON;
-use List::Util qw(min);
+use List::Util qw(min sum);
 use List::MoreUtils qw(uniq);
 use SVG;
 use YAML qw(LoadFile);
@@ -41,7 +41,7 @@ my %colours = (
 
         board  => "#E3F6FF",
         border => "#20111C",
-        center => "#E32745",
+        centre => "#E32745",
         tile   => "#DFBC95",
         rack   => "#CCAA77",
     );
@@ -145,8 +145,8 @@ sub makedefaultboard
 {
     my ($board) = @_;
 
-    makesquare($board, x => 7, y => 7, colour => $colours{center}, prefix =>
-            "center_", text => "\N{BLACK STAR}", textstyle =>
+    makesquare($board, x => 7, y => 7, colour => $colours{centre}, prefix =>
+            "centre_", text => "\N{BLACK STAR}", textstyle =>
             "font-size:@{[1.1*$font_size]}pt");
     for my $type (keys %specials) {
         for my $c (@{ $specials{$type} }) {
@@ -170,9 +170,8 @@ sub makedefaultboard
 
 sub updatescore
 {
-    my ($self) = @_;
+    my ($self, $game) = @_;
 
-    my $game = $self->{_game}->{game};
     my $players = $game->{players};
     my @users = sort { $a->{position} <=> $b->{position} } @$players;
 
@@ -188,21 +187,20 @@ sub updatescore
 sub loadboard
 {
     my ($self, $board, $game) = @_;
-    for my $tile (@{ $game->{game}{tiles} }) {
+    for my $tile (@{ $game->{tiles} }) {
         # TODO handle blanks
         my ($x, $y, $letter, $isblank) = @$tile;
         makeletter($board, x => $x, y => $y, letter => $letter, isblank => $isblank);
         $self->{_board}[$y][$x] = $letter;
     }
 
-    $self->{_game} = $game;
-    $self->updatescore;
+    $self->updatescore($game);
 }
 
 sub setrack
 {
-    my ($self, $letters) = @_;
-    $letters ||= $self->{_rack};
+    my ($self, $game, $letters) = @_;
+    $letters ||= $game->{_rack};
 
     my $racksvg = $self->{racksvg} = SVG->new(width => $rack_width, height => $rack_height);
     my $racklayer = $racksvg->group(id => 'layer');
@@ -217,7 +215,7 @@ sub setrack
         );
 
     my $x = 0;
-    $self->{_rack} = $letters;
+    $game->{_rack} = $letters;
     for my $tile (@$letters) {
         makeletter($rack, x => $x, y => 0, letter => uc $tile);
         $x++;
@@ -228,12 +226,12 @@ sub setrack
 sub loadrack
 {
     my ($self, $game) = @_;
-    my $players = $game->{game}{players};
+    my $players = $game->{players};
     # XXX finding myself this way is a hack
     my ($me) = grep { $_->{rack} } @$players;
-    $self->setrack($me->{rack});
+    $self->setrack($game, $me->{rack});
 
-    $self->{_rackbak} = [ @{ $self->{_rack} } ];
+    $self->{_rackbak} = [ @{ $game->{_rack} } ];
 }
 
 sub new
@@ -265,8 +263,8 @@ sub new
 
     makedefaultboard($board);
     my $dump = LoadFile("board.yaml") or die "Failed to load board";
-    $self->loadboard($board, $dump->{content} || die "Bad board");
-    $self->loadrack($dump->{content} || die "Bad rack");
+    $self->loadboard($board, my $game = $self->{_currentgame} = $dump->{content}{game} || die "Bad board");
+    $self->loadrack($game, $dump->{content} || die "Bad rack");
 
     my $tv = $self->get_widget('treeviewgames');
     my $sl = Gtk2::Ex::Simple::List->new_from_treeview(
@@ -342,6 +340,7 @@ sub boardclick_cb
     my ($x, $y) = map { int $_ / $size } ($event->x, $event->y);
     # x and y are in cell coordinates
 
+    my $game = $self->{_currentgame};
     if (defined $self->{_hotletter}) {
         # XXX implement isblank
         my $isblank = 0;
@@ -353,6 +352,7 @@ sub boardclick_cb
         my $letter = $self->{_hotletter};
         my $group = makeletter($self->{boardsvg}, x => $x, y => $y, letter => $letter, isblank => $isblank);
         $self->get_widget('buttonclear')->sensitive(1);
+        $self->get_widget('buttonplay')->sensitive(1);
 
         my $id = $group->getElementID;
         $self->{_temptiles}{$id} = {
@@ -365,8 +365,8 @@ sub boardclick_cb
         };
         $self->_back_out(delete $self->{_temprack});
 
-        splice @{ $self->{_rack} }, $self->{_hotindex}, 1;
-        $self->setrack;
+        splice @{ $game->{_rack} }, $self->{_hotindex}, 1;
+        $self->setrack($game);
 
         $self->{_hotindex } = undef;
         $self->{_hotletter} = undef;
@@ -376,13 +376,14 @@ sub boardclick_cb
         if (my $hash = delete $self->{_temptiles}{$id}) {
             my $letter = $hash->{letter};
             $self->_back_out([ $hash->{group} ]);
-            $self->setrack([ @{ $self->{_rack} }, $letter ]);
+            $self->setrack($game, [ @{ $game->{_rack} }, $letter ]);
         }
     }
 
     $self->get_widget('rackarea')->queue_draw;
     $self->get_widget('boardarea')->queue_draw;
-    $self->get_widget('buttonclear')->parent->queue_draw;
+    $self->get_widget('buttonclear')->queue_draw;
+    $self->get_widget('buttonplay')->queue_draw;
 
     return 0;
 }
@@ -392,14 +393,15 @@ sub rackclick_cb
     my ($self, $rack, $event) = @_;
     my ($x) = int $event->x / $rack->allocation->height;
 
+    my $game = $rack->{_currentgame};
     # TODO allow multiple selection for exchange
     $self->_back_out(delete $self->{_temprack});
-    return if $x >= @{ $self->{_rack} };
+    return if $x >= @{ $game->{_rack} };
 
     if (defined $self->{_hotletter}) {
-        my $r = $self->{_rack};
+        my $r = $game->{_rack};
         ($r->[$x], $r->[$self->{_hotindex}]) = ($r->[$self->{_hotindex}], $r->[$x]);
-        $self->setrack;
+        $self->setrack($game);
 
         $self->{_hotindex } = undef;
         $self->{_hotletter} = undef;
@@ -409,7 +411,7 @@ sub rackclick_cb
         push @{ $self->{_temprack} }, $group;
 
         $self->{_hotindex } = $x;
-        $self->{_hotletter} = $self->{_rack}[$x];
+        $self->{_hotletter} = $game->{_rack}[$x];
     }
 
     $self->get_widget('rackarea')->queue_draw;
@@ -421,11 +423,13 @@ sub shuffle_rack
 {
     my ($self, $button) = @_;
 
+    my $game = $self->{_currentgame};
+
     $self->{_hotindex } = undef;
     $self->{_hotletter} = undef;
 
     my @new;
-    my @old = @{ $self->{_rack} };
+    my @old = @{ $game->{_rack} };
     return if @old <= 1;
     MIX: {
         @new = ();
@@ -440,7 +444,7 @@ sub shuffle_rack
         redo MIX;
     }
 
-    $self->setrack(\@new);
+    $self->setrack($game, \@new);
     $self->get_widget('rackarea')->queue_draw;
 }
 
@@ -458,7 +462,7 @@ sub _find_words
 {
     sub num { $a <=> $b }
 
-    my ($self, $tiles) = @_;
+    my ($self, $game, $tiles) = @_;
     $tiles ||= [ values %{ $self->{_temptiles} } ];
     return () unless @$tiles;
 
@@ -522,17 +526,26 @@ sub _find_words
         push @words, join "", @stuff;
     }
 
-    return uniq grep { length > 1 } @words;
+    my @ok = uniq grep { length > 1 } @words;
+    if (!$game->{move_count}) {
+        my $centred = grep { $_->{x} == 7 and $_->{y} == 7 } @$tiles;
+        return $centred ? @ok : ();
+    } else {
+        # iff the tiles are adjacent to something, the total length of the words
+        # created will be greater than the number of tiles placed
+        my $len = sum map length, @ok;
+        return $len > @$tiles ? @ok : ();
+    }
 }
 
 sub _play_move
 {
-    my ($self) = @_;
+    my ($self, $game) = @_;
 
     my @tiles = map {
         [ $_->{x}, $_->{y}, $_->{letter}, $_->{isblank} ? JSON::true : JSON::false ]
     } values %{ $self->{_temptiles} };
-    my @words = $self->_find_words;
+    my @words = $self->_find_words($game);
     # TODO complain loudly to the user when there are no words
     return unless @words;
 
@@ -548,23 +561,27 @@ sub _play_move
 sub buttonplay_clicked_cb
 {
     my ($self, $button) = @_;
-    $self->_play_move;
+    $self->_play_move($self->{_currentgame});
 }
 
 sub buttonclear_clicked_cb
 {
     my ($self, $button) = @_;
+    my $game = $self->{_currentgame};
 
     # TODO when does _rackbak get updated ?
-    $self->setrack([ @{ $self->{_rackbak} } ]);
+    $self->setrack($game, [ @{ $self->{_rackbak} } ]);
 
     $self->_back_out([ map $_->{group}, values %{ delete $self->{_temptiles} } ]);
     $self->_back_out(delete $self->{_temprack});
 
+    $self->get_widget('buttonplay')->sensitive(0);
+    $self->get_widget('buttonclear')->sensitive(0);
+
+    # TODO buttons don't update their look until I mouse over them ?
     $self->get_widget('rackarea')->queue_draw;
     $self->get_widget('boardarea')->queue_draw;
-
-    $self->get_widget('buttonclear')->sensitive(0);
+    $self->get_widget('buttonplay')->queue_draw;
     $self->get_widget('buttonclear')->queue_draw;
 
     return 0; # propagate ?

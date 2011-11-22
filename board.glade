@@ -183,11 +183,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
                         <child>
                           <widget class="GtkAlignment" id="alignment7">
                             <property name="visible">True</property>
+                            <property name="receives_default">True</property>
                             <property name="yscale">0</property>
                             <child>
                               <widget class="GtkButton" id="buttonplay">
                                 <property name="label" translatable="yes" comments="skip turn">_Play</property>
                                 <property name="visible">True</property>
+                                <property name="sensitive">False</property>
                                 <property name="can_focus">True</property>
                                 <property name="receives_default">True</property>
                                 <property name="use_action_appearance">False</property>
