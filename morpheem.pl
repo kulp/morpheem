@@ -143,7 +143,7 @@ my %specials = (
 
 sub makedefaultboard
 {
-    my ($board) = @_;
+    my ($self, $board) = @_;
 
     makesquare($board, x => 7, y => 7, colour => $colours{centre}, prefix =>
             "centre_", text => "\N{BLACK STAR}", textstyle =>
@@ -186,7 +186,8 @@ sub updatescore
 
 sub loadboard
 {
-    my ($self, $board, $game) = @_;
+    my ($self, $game) = @_;
+    my $board = $game->{_board};
     for my $tile (@{ $game->{tiles} }) {
         # TODO handle blanks
         my ($x, $y, $letter, $isblank) = @$tile;
@@ -226,12 +227,51 @@ sub setrack
 sub loadrack
 {
     my ($self, $game) = @_;
-    my $players = $game->{players};
-    # XXX finding myself this way is a hack
-    my ($me) = grep { $_->{rack} } @$players;
-    $self->setrack($game, $me->{rack});
+    $self->setrack($game, $game->{_me}{rack});
 
     $self->{_rackbak} = [ @{ $game->{_rack} } ];
+}
+
+sub loadgame
+{
+    my ($self, $game) = @_;
+
+    $self->{_currentgame} = $game; # XXX
+    my $players = $game->{players};
+    my ($me) = grep { $_->{id} eq $self->{_me}{id} } @$players;
+    $game->{_me} = $me;
+
+    my $boardsvg = $game->{_svg}{board} = SVG->new(width => $board_size, height => $board_size);
+    my $boardlayer = $boardsvg->group(id => 'layer');
+    my $board = $game->{_board} = $boardlayer->group(id => 'board');
+    $board->rect(
+            id     => "rect_board",
+            style  => "fill:$colours{board}",
+            x      => 0,
+            y      => 0,
+            width  => $board_size,
+            height => $board_size,
+        );
+    drawmargins($board, x => 15, y => 15, board_height => $board_size, board_width => $board_size);
+
+    $self->makedefaultboard($board);
+
+    $self->loadboard($game);
+    $self->loadrack($game, $me->{rack});
+
+    $self->{_games}{ $game->{id} } = $game;
+
+    my $sl    = $self->{_list};
+    my $yes   = $sl->render_icon("gtk-yes", "small-toolbar");
+    my $no    = $sl->render_icon("gtk-no" , "small-toolbar");
+    my @icons = ($no, $yes);
+
+    my $running     = $game->{is_running};
+    my $currplayer  = $game->{current_player};
+    my $myturn      = !!($running && $currplayer == $me->{position});
+    my $otherplayer = $players->[1 - $me->{position}];
+    push @{ $sl->{data} },
+        [ $game->{id}, $icons[$myturn], undef, $otherplayer->{username} ];
 }
 
 sub new
@@ -248,35 +288,22 @@ sub new
         $self = $class->SUPER::new($tmp->filename);
     }
 
-    my $boardsvg = $self->{boardsvg} = SVG->new(width => $board_size, height => $board_size);
-    my $boardlayer = $boardsvg->group(id => 'layer');
-    my $board = $self->{board} = $boardlayer->group(id => 'board');
-    $board->rect(
-            id     => "rect_board",
-            style  => "fill:$colours{board}",
-            x      => 0,
-            y      => 0,
-            width  => $board_size,
-            height => $board_size,
+    my $sl = $self->{_list} = Gtk2::Ex::Simple::List->new_from_treeview(
+            $self->get_widget('treeviewgames'),
+            Id    => 'text',
+            Ready => 'pixbuf',
+            Icon  => 'pixbuf',
+            With  => 'text',
         );
-    drawmargins($board, x => 15, y => 15, board_height => $board_size, board_width => $board_size);
 
-    makedefaultboard($board);
+    $sl->get_column(0)->set(visible => 0);
+
+    my $me = LoadFile("me.yaml") or die "Failed to load self";
+    $self->{_me} = $me->{content};
+
     my $dump = LoadFile("board.yaml") or die "Failed to load board";
-    $self->loadboard($board, my $game = $self->{_currentgame} = $dump->{content}{game} || die "Bad board");
-    $self->loadrack($game, $dump->{content} || die "Bad rack");
-
-    my $tv = $self->get_widget('treeviewgames');
-    my $sl = Gtk2::Ex::Simple::List->new_from_treeview(
-                    $tv, qw(
-                    Ready       pixbuf
-                    Icon        pixbuf
-                    With        text
-                    ));
-
-    push @{ $sl->{data} },
-         [ $tv->render_icon("gtk-yes", "small-toolbar"), undef, "Anon2345" ],
-         [ $tv->render_icon("gtk-no" , "small-toolbar"), undef, "Anon0123" ];
+    my $game = $dump->{content}{game};
+    $self->loadgame($game);
 
     return $self;
 }
@@ -300,7 +327,9 @@ sub boardarea_draw_cb
 
     my $r = Gnome2::Rsvg::Handle->new;
 
-    my $boardsvg = $self->{boardsvg};
+    my $game = $self->{_currentgame};
+
+    my $boardsvg = $game->{_svg}{board};
     my $size = $self->_boardsize($b);
 
     $r->set_size_callback( sub { ($size, $size) });
@@ -345,12 +374,12 @@ sub boardclick_cb
         # XXX implement isblank
         my $isblank = 0;
         # XXX abstract naming convention
-        my $already = $self->{boardsvg}->getElementByID("letter_tile_${x}_${y}");
+        my $already = $game->{_svg}{board}->getElementByID("letter_tile_${x}_${y}");
         # TODO support swapping with existing tile ?
         return if $already;
 
         my $letter = $self->{_hotletter};
-        my $group = makeletter($self->{boardsvg}, x => $x, y => $y, letter => $letter, isblank => $isblank);
+        my $group = makeletter($game->{_svg}{board}, x => $x, y => $y, letter => $letter, isblank => $isblank);
         $self->get_widget('buttonclear')->sensitive(1);
         $self->get_widget('buttonplay')->sensitive(1);
 
@@ -393,7 +422,7 @@ sub rackclick_cb
     my ($self, $rack, $event) = @_;
     my ($x) = int $event->x / $rack->allocation->height;
 
-    my $game = $rack->{_currentgame};
+    my $game = $self->{_currentgame};
     # TODO allow multiple selection for exchange
     $self->_back_out(delete $self->{_temprack});
     return if $x >= @{ $game->{_rack} };
