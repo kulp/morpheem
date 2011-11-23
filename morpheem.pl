@@ -12,8 +12,11 @@ use warnings;
 use charnames ':full';
 use utf8;
 
-use Gtk2 '-init';
+use Gtk2 -init;
 use Gtk2::SimpleList;
+use Glib::Event;
+use Event;
+use AnyEvent;
 
 use File::Temp;
 use Gnome2::Rsvg;
@@ -471,7 +474,9 @@ sub blanksclick_cb
     # x and y are in cell coordinates
 
     my $char = ord('A') + $y * 6 + $x;
-    $self->get_widget('blanksdialog')->response($char);
+    if ($char >= ord('A') and $char <= ord('Z')) {
+        $self->get_widget('blanksdialog')->response($char);
+    }
 
     return 0;
 }
