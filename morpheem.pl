@@ -322,8 +322,8 @@ sub loadgame
 sub _row_activated_cb
 {
     my ($self, $sl, $path, $column) = @_;
-    my $row_ref = $sl->get_row_data_from_path ($path);
-    my $gameid  = $row_ref->[0];
+    my $row_ref = $sl->get_row_data_from_path($path);
+    my $gameid  = $row_ref->[0]; # id field
     my $game    = $self->{_games}{$gameid};
 
     $self->{_currentgame} = $game;
@@ -377,6 +377,7 @@ sub new
             State  => 'pixbuf',
             Avatar => 'pixbuf',
             User   => 'text',
+            Move   => 'text',
         );
 
     $sl->get_selection->set_mode("browse"); # always have one selected
@@ -409,6 +410,8 @@ sub new
 
     # hold open the AE engine
     $self->{_run} = AnyEvent->condvar;
+
+    $self->get_widget('mainwindow')->set_title("Morpheem ($self->{_me}{username})");
 
     return $self;
 }
