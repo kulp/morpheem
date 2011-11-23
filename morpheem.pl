@@ -348,7 +348,7 @@ sub _row_activated_cb
 
 sub new
 {
-    my $class = shift;
+    my ($class, %args) = @_;
     my $self;
     if (-f $glade_file) {
         $self = $class->SUPER::new($glade_file);
@@ -384,17 +384,12 @@ sub new
     $sl->get_column(0)->set(visible => 0);
     $sl->signal_connect(row_activated => sub { $self->_row_activated_cb(@_) });
 
-    my $username = shift @ARGV or die "supply username on command-line, password must be 'qqqqqq'";
-    my $pwhash = q(11c66b2d9af3dae28a9df67c22167949fa1d8926);
-    # XXX hash key order might tip off server
-    my %fields = ( username => $username, password => $pwhash );
-    #my %fields = ( id => $id, password => $pwhash );
-
-    # XXX watch out ; using the username login all the time instead of the id login
-    # might tip off the server that I'm not a real client
     $self->{_www}->post($urlbase . '/user/login/',
-            Content      => encode_json(\%fields),
             Content_Type => 'application/json',
+            Content      => encode_json({
+                                username => $args{username},
+                                password => $args{password},
+                            }),
         );
 
     $self->{_me} = decode_json($w->content)->{content};
@@ -810,5 +805,7 @@ package main;
 use strict;
 use warnings;
 
-Morpheem->new->run;
+my $username = shift or die "supply username on command-line, password must be 'qqqqqq'";
+my $pwhash = q(11c66b2d9af3dae28a9df67c22167949fa1d8926);
+Morpheem->new(username => $username, password => $pwhash)->run;
 
