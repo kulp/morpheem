@@ -39,6 +39,9 @@ my $rack_width  = 7 * $square_size + 8 * $margin;
 my $rack_height = $square_size + 2 * $margin;
 my $font_size   = 0.39 * $square_size;
 
+my $serverid = sprintf "%02d", int rand 7;
+my $urlbase = qq(http://game$serverid.wordfeud.com/wf);
+
 # XXX
 my $pixels = 60;
 
@@ -198,12 +201,12 @@ sub _updatescore
 sub _loadboard
 {
     my ($self, $game) = @_;
-    my $board = $game->{_boardlayer};
+    my $board = $game->{_m}{boardlayer};
     for my $tile (@{ $game->{tiles} }) {
         # TODO handle blanks
         my ($x, $y, $letter, $isblank) = @$tile;
         makeletter($board, x => $x, y => $y, letter => $letter, isblank => $isblank);
-        $game->{_board}[$y][$x] = $letter;
+        $game->{_m}{board}[$y][$x] = $letter;
     }
 
     $self->_updatescore($game);
@@ -212,9 +215,9 @@ sub _loadboard
 sub _setrack
 {
     my ($self, $game, $letters) = @_;
-    $letters ||= $game->{_rack};
+    $letters ||= $game->{_m}{rack};
 
-    my $racksvg = $game->{_svg}{rack} = SVG->new(width => $rack_width, height => $rack_height);
+    my $racksvg = $game->{_m}{svg}{rack} = SVG->new(width => $rack_width, height => $rack_height);
     my $racklayer = $racksvg->group(id => 'layer');
     my $rack = $self->{rack} = $racklayer->group(id => 'rack');
     $rack->rect(
@@ -227,20 +230,21 @@ sub _setrack
         );
 
     my $x = 0;
-    $game->{_rack} = $letters;
+    $game->{_m}{rack} = $letters;
     for my $tile (@$letters) {
         makeletter($rack, x => $x, y => 0, letter => uc $tile);
         $x++;
     }
 
+    $self->get_widget('rackarea')->queue_draw;
 }
 
 sub _loadrack
 {
     my ($self, $game) = @_;
-    $self->_setrack($game, $game->{_me}{rack});
+    $self->_setrack($game, $game->{_m}{me}{rack});
 
-    $game->{_rackbak} = [ @{ $game->{_rack} || [] } ];
+    $game->{_m}{rackbak} = [ @{ $game->{_m}{rack} || [] } ];
 }
 
 sub _myturn
@@ -263,11 +267,11 @@ sub loadgame
 {
     my ($self, $game) = @_;
 
-    my $me = $game->{_me} = $self->_me($game);
+    my $me = $game->{_m}{me} = $self->_me($game);
 
-    my $boardsvg = $game->{_svg}{board} = SVG->new(width => $board_size, height => $board_size);
+    my $boardsvg = $game->{_m}{svg}{board} = SVG->new(width => $board_size, height => $board_size);
     my $boardlayer = $boardsvg->group(id => 'layer');
-    my $board = $game->{_boardlayer} = $boardlayer->group(id => 'board');
+    my $board = $game->{_m}{boardlayer} = $boardlayer->group(id => 'board');
     $board->rect(
             id     => "rect_board",
             style  => "fill:$colours{board}",
@@ -323,14 +327,23 @@ sub _row_activated_cb
     my $game    = $self->{_games}{$gameid};
 
     $self->{_currentgame} = $game;
-    $self->get_widget('rackarea')->queue_draw;
-    $self->get_widget('boardarea')->queue_draw;
+
+    $self->_updatescore($game);
 
     $self->get_widget('buttonplay')->sensitive($self->_tilesout($game));
     $self->get_widget('buttonclear')->sensitive($self->_tilesout($game));
 
-    $self->get_widget('buttonplay')->queue_draw;
-    $self->get_widget('buttonclear')->queue_draw;
+    $self->get_widget($_)->queue_draw for qw(
+            rackarea
+            boardarea
+            buttonplay
+            buttonclear
+            labelUser0points
+            labelUser1points
+            labelUser0points
+            labelUser1points
+            labeltilesleft
+        );
 }
 
 sub new
@@ -370,8 +383,6 @@ sub new
     $sl->get_column(0)->set(visible => 0);
     $sl->signal_connect(row_activated => sub { $self->_row_activated_cb(@_) });
 
-    my $serverid = sprintf "%02d", int rand 7;
-    my $base = qq(http://game$serverid.wordfeud.com/wf);
     my $username = shift @ARGV or die "supply username on command-line, password must be 'qqqqqq'";
     my $pwhash = q(11c66b2d9af3dae28a9df67c22167949fa1d8926);
     # XXX hash key order might tip off server
@@ -380,18 +391,18 @@ sub new
 
     # XXX watch out ; using the username login all the time instead of the id login
     # might tip off the server that I'm not a real client
-    $self->{_www}->post($base . '/user/login/',
+    $self->{_www}->post($urlbase . '/user/login/',
             Content      => encode_json(\%fields),
             Content_Type => 'application/json',
         );
 
     $self->{_me} = decode_json($w->content)->{content};
 
-    $w->post($base . '/user/games/');
+    $w->post($urlbase . '/user/games/');
     my $games = decode_json($w->content)->{content}{games};
 
     for my $game (@$games) {
-        $w->post($base . "/game/$game->{id}/");
+        $w->post($urlbase . "/game/$game->{id}/");
         my $loaded = decode_json($w->content)->{content}{game};
         $self->loadgame($loaded);
     }
@@ -422,7 +433,7 @@ sub boardarea_draw_cb
     my $r = Gnome2::Rsvg::Handle->new;
     my $game = $self->{_currentgame};
 
-    my $boardsvg = $game->{_svg}{board} or return 1; # no propagate
+    my $boardsvg = $game->{_m}{svg}{board} or return 1; # no propagate
     my $size = $self->_boardsize($b);
 
     $r->set_size_callback(sub { ($size, $size) });
@@ -442,7 +453,7 @@ sub rackarea_draw_cb
     my $r = Gnome2::Rsvg::Handle->new;
     my $game = $self->{_currentgame};
 
-    my $racksvg = $game->{_svg}{rack} or return 1; # no propagate
+    my $racksvg = $game->{_m}{svg}{rack} or return 1; # no propagate
     my $height = $b->allocation->height;
     my $width  = $height * 7 + $margin * 8;
     $b->set_size_request($width, $height);
@@ -466,8 +477,8 @@ sub blanksarea_draw_cb
     my $blanks_width  = 6 * $square_size + 7 * $margin;
     my $blanks_height = 5 * $square_size + 6 * $margin;
 
-    if (not $game->{_svg}{blanks}) {
-        my $svg = $game->{_svg}{blanks} ||= SVG->new(width => $blanks_width, height => $blanks_height);
+    if (not $game->{_m}{svg}{blanks}) {
+        my $svg = $game->{_m}{svg}{blanks} ||= SVG->new(width => $blanks_width, height => $blanks_height);
         my $g = $svg->group;
         drawmargins($g, x => 6, y => 5, board_width => $blanks_width, board_height => $blanks_height);
         for my $i (0 .. 25) {
@@ -476,7 +487,7 @@ sub blanksarea_draw_cb
             makeletter($g, x => $x, y => $y, letter => chr(ord('A') + $i), isblank => 1);
         }
     }
-    my $blankssvg = $game->{_svg}{blanks};
+    my $blankssvg = $game->{_m}{svg}{blanks};
 
     my $height = $b->allocation->height;
     my $width  = int($height / 5 * 6);
@@ -524,7 +535,7 @@ sub boardclick_cb
         my $letter = $self->{_hotletter};
         my $isblank = $letter eq "";
         # XXX abstract naming convention
-        my $already = $game->{_svg}{board}->getElementByID("letter_tile_${x}_${y}");
+        my $already = $game->{_m}{svg}{board}->getElementByID("letter_tile_${x}_${y}");
         # TODO support swapping with existing tile ?
         return if $already;
 
@@ -534,12 +545,12 @@ sub boardclick_cb
             $letter = chr($blankval);
         }
 
-        my $group = makeletter($game->{_svg}{board}, x => $x, y => $y, letter => $letter, isblank => $isblank);
+        my $group = makeletter($game->{_m}{svg}{board}, x => $x, y => $y, letter => $letter, isblank => $isblank);
         $self->get_widget('buttonclear')->sensitive(1);
         $self->get_widget('buttonplay')->sensitive(1);
 
         my $id = $group->getElementID;
-        $game->{_temptiles}{$id} = {
+        $game->{_m}{temptiles}{$id} = {
             letter  => $letter,
             group   => $group,
             x       => $x,
@@ -547,9 +558,9 @@ sub boardclick_cb
             id      => $id,
             isblank => $isblank,
         };
-        $self->_back_out(delete $game->{_temprack});
+        $self->_back_out(delete $game->{_m}{temprack});
 
-        splice @{ $game->{_rack} }, $self->{_hotindex}, 1;
+        splice @{ $game->{_m}{rack} }, $self->{_hotindex}, 1;
         $self->_setrack($game);
 
         $self->{_hotindex } = undef;
@@ -557,14 +568,13 @@ sub boardclick_cb
     } else {
         # take a letter back
         my $id = "letter_tile_${x}_${y}";
-        if (my $hash = delete $game->{_temptiles}{$id}) {
+        if (my $hash = delete $game->{_m}{temptiles}{$id}) {
             my $letter = $hash->{isblank} ? "" : $hash->{letter};
             $self->_back_out([ $hash->{group} ]);
-            $self->_setrack($game, [ @{ $game->{_rack} }, $letter ]);
+            $self->_setrack($game, [ @{ $game->{_m}{rack} }, $letter ]);
         }
     }
 
-    $self->get_widget('rackarea')->queue_draw;
     $self->get_widget('boardarea')->queue_draw;
     $self->get_widget('buttonclear')->queue_draw;
     $self->get_widget('buttonplay')->queue_draw;
@@ -579,23 +589,23 @@ sub rackclick_cb
 
     my $game = $self->{_currentgame};
     # TODO allow multiple selection for exchange
-    $self->_back_out(delete $game->{_temprack});
-    return if $x >= @{ $game->{_rack} };
+    $self->_back_out(delete $game->{_m}{temprack});
+    return if $x >= @{ $game->{_m}{rack} };
 
     if (defined $self->{_hotletter}) {
-        my $r = $game->{_rack};
+        my $r = $game->{_m}{rack};
         ($r->[$x], $r->[$self->{_hotindex}]) = ($r->[$self->{_hotindex}], $r->[$x]);
         $self->_setrack($game);
 
         $self->{_hotindex } = undef;
         $self->{_hotletter} = undef;
     } else {
-        my $group = makesquare($game->{_svg}{rack}, x => $x, y => 0, squarestyle
+        my $group = makesquare($game->{_m}{svg}{rack}, x => $x, y => 0, squarestyle
                 => "fill-opacity:25%", colour => "red");
-        push @{ $game->{_temprack} }, $group;
+        push @{ $game->{_m}{temprack} }, $group;
 
         $self->{_hotindex } = $x;
-        $self->{_hotletter} = $game->{_rack}[$x];
+        $self->{_hotletter} = $game->{_m}{rack}[$x];
     }
 
     $self->get_widget('rackarea')->queue_draw;
@@ -613,7 +623,7 @@ sub shuffle_rack
     $self->{_hotletter} = undef;
 
     my @new;
-    my @old = @{ $game->{_rack} };
+    my @old = @{ $game->{_m}{rack} };
     return if @old <= 1;
     my $tries = 0;
     MIX: {
@@ -632,7 +642,6 @@ sub shuffle_rack
     }
 
     $self->_setrack($game, \@new);
-    $self->get_widget('rackarea')->queue_draw;
 }
 
 sub _back_out
@@ -650,7 +659,7 @@ sub _find_words
     sub num { $a <=> $b }
 
     my ($self, $game, $tiles) = @_;
-    $tiles ||= [ values %{ $game->{_temptiles} } ];
+    $tiles ||= [ values %{ $game->{_m}{temptiles} } ];
     return () unless @$tiles;
 
     my @words;
@@ -672,7 +681,7 @@ sub _find_words
 
     # TODO fix warnings
 
-    my $board = $game->{_board};
+    my $board = $game->{_m}{board};
 
     if (!$dx) {
         my $x = $xs[0]->{x};
@@ -731,7 +740,7 @@ sub _play_move
 
     my @tiles = map {
         [ 0+$_->{x}, 0+$_->{y}, $_->{letter}, $_->{isblank} ? JSON::true : JSON::false ]
-    } values %{ $game->{_temptiles} };
+    } values %{ $game->{_m}{temptiles} };
     my @words = $self->_find_words($game);
     # TODO complain loudly to the user when there are no words
     return unless @words;
@@ -742,7 +751,18 @@ sub _play_move
             move    => \@tiles,
         );
 
-    warn encode_json(\%data);
+    my $w = $self->{_www};
+    $w->post($urlbase . "/game/$game->{id}/move/",
+            Content      => encode_json(\%data),
+            Content_Type => 'application/json',
+        );
+    my $response = decode_json($w->content);
+    if ($response->{status} ne "success") {
+        WWW $response;
+    } else {
+        $self->_setrack($game, [ @{ $game->{_m}{rack} }, @{ $response->{content}{new_tiles} } ]);
+        # TODO we shouldn't have to reload the game all the time
+    }
 }
 
 sub buttonplay_clicked_cb
@@ -754,7 +774,7 @@ sub buttonplay_clicked_cb
 sub _tilesout
 {
     my ($self, $game) = @_;
-    return +@{ $game->{_rackbak} } != +@{ $game->{_rack} };
+    return +@{ $game->{_m}{rackbak} } != +@{ $game->{_m}{rack} };
 }
 
 sub buttonclear_clicked_cb
@@ -763,10 +783,10 @@ sub buttonclear_clicked_cb
     my $game = $self->{_currentgame};
 
     # TODO when does _rackbak get updated ?
-    $self->_setrack($game, [ @{ $game->{_rackbak} } ]);
+    $self->_setrack($game, [ @{ $game->{_m}{rackbak} } ]);
 
-    $self->_back_out([ map $_->{group}, values %{ delete $game->{_temptiles} } ]);
-    $self->_back_out(delete $game->{_temprack});
+    $self->_back_out([ map $_->{group}, values %{ delete $game->{_m}{temptiles} } ]);
+    $self->_back_out(delete $game->{_m}{temprack});
 
     $self->get_widget('buttonplay')->sensitive($self->_tilesout($game));
     $self->get_widget('buttonclear')->sensitive($self->_tilesout($game));
