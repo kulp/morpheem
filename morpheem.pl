@@ -392,13 +392,12 @@ sub boardarea_draw_cb
     my ($self, $b, $event) = @_;
 
     my $r = Gnome2::Rsvg::Handle->new;
-
     my $game = $self->{_currentgame};
 
     my $boardsvg = $game->{_svg}{board} or return 1; # no propagate
     my $size = $self->_boardsize($b);
 
-    $r->set_size_callback( sub { ($size, $size) });
+    $r->set_size_callback(sub { ($size, $size) });
     $r->write($boardsvg->xmlify) or die "Failed to write SVG to RSVG handle";
     $r->close or die "Failed to parse SVG";
     # XXX deprecated, use Cairo
@@ -419,7 +418,7 @@ sub rackarea_draw_cb
     my $height = $b->allocation->height;
     my $width  = $height * 7 + $margin * 8;
     $b->set_size_request($width, $height);
-    $r->set_size_callback( sub { ($height, $width) });
+    $r->set_size_callback(sub { ($height, $width) });
     $r->write($racksvg->xmlify) or die "Failed to write SVG to RSVG handle";
     $r->close or die "Failed to parse SVG";
     # XXX deprecated, use Cairo
@@ -427,6 +426,60 @@ sub rackarea_draw_cb
             0, 0, 0, 0, $width, $height, "GDK_RGB_DITHER_NONE", 0, 0);
 
     return 0; # propagate
+}
+
+sub blanksarea_draw_cb
+{
+    my ($self, $b, $event) = @_;
+
+    my $r = Gnome2::Rsvg::Handle->new;
+    my $game = $self->{_currentgame};
+
+    my $blanks_width  = 6 * $square_size + 7 * $margin;
+    my $blanks_height = 5 * $square_size + 6 * $margin;
+
+    if (not $game->{_svg}{blanks}) {
+        my $svg = $game->{_svg}{blanks} ||= SVG->new(width => $blanks_width, height => $blanks_height);
+        my $g = $svg->group;
+        drawmargins($g, x => 6, y => 5, board_width => $blanks_width, board_height => $blanks_height);
+        for my $i (0 .. 25) {
+            my $x = $i % 6;
+            my $y = int($i / 6);
+            makeletter($g, x => $x, y => $y, letter => chr(ord('A') + $i), isblank => 1);
+        }
+    }
+    my $blankssvg = $game->{_svg}{blanks};
+
+    my $height = $b->allocation->height;
+    my $width  = int($height / 5 * 6);
+    #$b->set_size_request($width, $height);
+    $r->set_size_callback(sub { ($height, $width) });
+    $r->write($blankssvg->xmlify) or die "Failed to write SVG to RSVG handle";
+    $r->close or die "Failed to parse SVG";
+    # XXX deprecated, use Cairo
+    $r->get_pixbuf->render_to_drawable($b->window, $b->style->fg_gc($b->state),
+            0, 0, 0, 0, $width, $height, "GDK_RGB_DITHER_NONE", 0, 0);
+
+    return 0; # propagate
+}
+
+sub blanksclick_cb
+{
+    my ($self, $b, $event) = @_;
+    my $size = $b->allocation->width / 6;
+    my ($x, $y) = map { int $_ / $size } ($event->x, $event->y);
+    # x and y are in cell coordinates
+
+    my $char = ord('A') + $y * 6 + $x;
+    $self->get_widget('blanksdialog')->response($char);
+
+    return 0;
+}
+
+sub blanksdialog_cancel_cb
+{
+    my ($self, $b) = @_;
+    $self->get_widget('blanksdialog')->hide;
 }
 
 sub boardclick_cb
@@ -438,14 +491,19 @@ sub boardclick_cb
 
     my $game = $self->{_currentgame};
     if (defined $self->{_hotletter}) {
-        # XXX implement isblank
-        my $isblank = 0;
+        my $letter = $self->{_hotletter};
+        my $isblank = $letter eq "";
         # XXX abstract naming convention
         my $already = $game->{_svg}{board}->getElementByID("letter_tile_${x}_${y}");
         # TODO support swapping with existing tile ?
         return if $already;
 
-        my $letter = $self->{_hotletter};
+        if ($isblank) {
+            my $blankval = $self->get_widget('blanksdialog')->run;
+            return unless $blankval;
+            $letter = chr($blankval);
+        }
+
         my $group = makeletter($game->{_svg}{board}, x => $x, y => $y, letter => $letter, isblank => $isblank);
         $self->get_widget('buttonclear')->sensitive(1);
         $self->get_widget('buttonplay')->sensitive(1);
@@ -457,7 +515,7 @@ sub boardclick_cb
             x       => $x,
             y       => $y,
             id      => $id,
-            isblank => $isblank ? JSON::true : JSON::false,
+            isblank => $isblank,
         };
         $self->_back_out(delete $game->{_temprack});
 
@@ -470,7 +528,7 @@ sub boardclick_cb
         # take a letter back
         my $id = "letter_tile_${x}_${y}";
         if (my $hash = delete $game->{_temptiles}{$id}) {
-            my $letter = $hash->{letter};
+            my $letter = $hash->{isblank} ? "" : $hash->{letter};
             $self->_back_out([ $hash->{group} ]);
             $self->_setrack($game, [ @{ $game->{_rack} }, $letter ]);
         }
@@ -684,17 +742,16 @@ sub buttonclear_clicked_cb
     $self->get_widget('buttonclear')->sensitive($self->_tilesout($game));
 
     # TODO buttons don't update their look until I mouse over them ?
-    $self->get_widget('rackarea')->queue_draw;
-    $self->get_widget('boardarea')->queue_draw;
-    $self->get_widget('buttonplay')->queue_draw;
-    $self->get_widget('buttonclear')->queue_draw;
+    $self->get_widget($_)->queue_draw for qw(
+            rackarea boardarea buttonplay buttonclear
+        );
 
     return 0; # propagate ?
 }
 
 sub gtk_main_quit  { Gtk2->main_quit }
 sub show_about_box { shift->get_widget('aboutdialog1')->show }
-sub hide_about_box { $_[1]->hide }
+sub hide_dialog    { $_[1]->hide }
 
 package main;
 use strict;
