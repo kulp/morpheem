@@ -48,12 +48,7 @@ my $pixels = 60;
 # colours lifted from Google Images pictures of real scrabble boards (tile
 # colour lightened)
 my %colours = (
-        TW => "#FB4C08",
-        DL => "#2E89CD",
-        DW => "#E32745",
-        TL => "#579B0B",
-
-        board  => "#E3F6FF",
+        board  => '#E3F6FF',
         border => "#20111C",
         centre => "#E32745",
         tile   => "#DFBC95",
@@ -155,31 +150,34 @@ my %specials = (
         TL => [ [0, 0], [1, 5], [3, 3], [5, 5], ],
     );
 
-sub _makedefaultboard
+sub _makeboard
 {
-    my ($self, $board) = @_;
+    my ($self, $g, $desc) = @_;
 
-    makesquare($board, x => 7, y => 7, colour => $colours{centre}, prefix =>
+    my @specials = (
+        "" => '#E3F6FF',
+        DL => '#2E89CD',
+        TL => '#579B0B',
+        DW => '#E32745',
+        TW => '#FB4C08',
+    );
+
+    my $y = 0;
+    for my $row (@{ $desc->{board} }) {
+        my $x = 0;
+        for my $elt (@$row) {
+            my @args = (colour => $specials[$elt * 2 + 1],
+                        text   => $specials[$elt * 2 + 0],
+                        style  => "fill-opacity:100%");
+            makesquare($g, x => $x, y => $y, @args);
+            $x++;
+        }
+        $y++;
+    }
+
+    makesquare($g, x => 7, y => 7, colour => $colours{centre}, prefix =>
             "centre_", text => "\N{BLACK STAR}", textstyle =>
             "font-size:@{[1.1*$font_size]}pt");
-    for my $type (keys %specials) {
-        for my $c (@{ $specials{$type} }) {
-            my ($x, $y) = @$c;
-            my @args = (colour => $colours{$type},
-                        text   => $type,
-                        style  => "fill-opacity:100%");
-            # Construct reflection symmetries. We end up writing over the
-            # diagonals twice, but at 100% opacity we don't care.
-            makesquare($board, x =>      $x, y =>      $y, @args, prefix => "octant_a_");
-            makesquare($board, x =>      $x, y => 14 - $y, @args, prefix => "octant_b_");
-            makesquare($board, x => 14 - $x, y =>      $y, @args, prefix => "octant_c_");
-            makesquare($board, x => 14 - $x, y => 14 - $y, @args, prefix => "octant_d_");
-            makesquare($board, x =>      $y, y =>      $x, @args, prefix => "octant_e_");
-            makesquare($board, x =>      $y, y => 14 - $x, @args, prefix => "octant_f_");
-            makesquare($board, x => 14 - $y, y =>      $x, @args, prefix => "octant_g_");
-            makesquare($board, x => 14 - $y, y => 14 - $x, @args, prefix => "octant_h_");
-        }
-    }
 }
 
 sub _updatescore
@@ -281,7 +279,8 @@ sub loadgame
         );
     drawmargins($board, x => 15, y => 15, board_height => $board_size, board_width => $board_size);
 
-    $self->_makedefaultboard($board);
+    my $desc = decode_json($self->{_www}->get($urlbase . "/board/$game->{board}/")->content)->{content};
+    $self->_makeboard($board, $desc);
 
     $self->_loadboard($game);
     $self->_loadrack($game, $me->{rack});
