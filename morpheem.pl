@@ -17,6 +17,7 @@ use Gtk2::SimpleList;
 use Glib::Event;
 use Event;
 use AnyEvent;
+use Coro;
 
 use File::Temp;
 use Gnome2::Rsvg;
@@ -26,6 +27,8 @@ use List::Util qw(min sum);
 use SVG;
 use WWW::Mechanize::Gzip;
 use YAML qw(LoadFile);
+
+use XXX;
 
 my $glade_file = "board.glade";
 
@@ -237,7 +240,7 @@ sub _loadrack
     my ($self, $game) = @_;
     $self->_setrack($game, $game->{_me}{rack});
 
-    $game->{_rackbak} = [ @{ $game->{_rack} } ];
+    $game->{_rackbak} = [ @{ $game->{_rack} || [] } ];
 }
 
 sub _myturn
@@ -260,7 +263,6 @@ sub loadgame
 {
     my ($self, $game) = @_;
 
-    $self->{_currentgame} = $game; # XXX
     my $me = $game->{_me} = $self->_me($game);
 
     my $boardsvg = $game->{_svg}{board} = SVG->new(width => $board_size, height => $board_size);
@@ -295,19 +297,22 @@ sub loadgame
     my $small_pixbuf;
     # TODO make image fetching asynch
     # TODO don't fetch the same image more than once
-    eval {
-        my $file = File::Temp->new;
-        my $w = $self->{_www};
-        $w->get("http://avatars.wordfeud.com/$pixels/$otherplayer->{id}");
-        $w->save_content($file);
-        my $large_pixbuf = Gtk2::Gdk::Pixbuf->new_from_file($file);
-        $small_pixbuf = $large_pixbuf->scale_simple(48, 48, "GDK_INTERP_HYPER");
+    async {
+        eval {
+            my $file = File::Temp->new;
+            my $w = $self->{_www}->clone;
+            $w->get("http://avatars.wordfeud.com/$pixels/$otherplayer->{id}");
+            $w->save_content($file);
+            my $large_pixbuf = Gtk2::Gdk::Pixbuf->new_from_file($file);
+            $small_pixbuf = $large_pixbuf->scale_simple(48, 48, "GDK_INTERP_HYPER");
+        };
+
+        push @$data,
+            [ $game->{id}, $icons[$myturn], $small_pixbuf, $otherplayer->{username} ];
+
+        $sl->select($#$data);
+        $self->{_currentgame} = $game; # XXX
     };
-
-    push @$data,
-        [ $game->{id}, $icons[$myturn], $small_pixbuf, $otherplayer->{username} ];
-
-    $sl->select($#$data);
 }
 
 sub _row_activated_cb
@@ -365,14 +370,34 @@ sub new
     $sl->get_column(0)->set(visible => 0);
     $sl->signal_connect(row_activated => sub { $self->_row_activated_cb(@_) });
 
-    my $me = LoadFile("me.yaml") or die "Failed to load self";
-    $self->{_me} = $me->{content};
+    my $serverid = sprintf "%02d", int rand 7;
+    my $base = qq(http://game$serverid.wordfeud.com/wf);
+    my $username = shift @ARGV or die "supply username on command-line, password must be 'qqqqqq'";
+    my $pwhash = q(11c66b2d9af3dae28a9df67c22167949fa1d8926);
+    # XXX hash key order might tip off server
+    my %fields = ( username => $username, password => $pwhash );
+    #my %fields = ( id => $id, password => $pwhash );
 
-    for my $file (@ARGV) {
-        my $dump = LoadFile($file);
-        my $game = $dump->{content}{game};
-        $self->loadgame($game);
+    # XXX watch out ; using the username login all the time instead of the id login
+    # might tip off the server that I'm not a real client
+    $self->{_www}->post($base . '/user/login/',
+            Content      => encode_json(\%fields),
+            Content_Type => 'application/json',
+        );
+
+    $self->{_me} = decode_json($w->content)->{content};
+
+    $w->post($base . '/user/games/');
+    my $games = decode_json($w->content)->{content}{games};
+
+    for my $game (@$games) {
+        $w->post($base . "/game/$game->{id}/");
+        my $loaded = decode_json($w->content)->{content}{game};
+        $self->loadgame($loaded);
     }
+
+    # hold open the AE engine
+    $self->{_run} = AnyEvent->condvar;
 
     return $self;
 }
