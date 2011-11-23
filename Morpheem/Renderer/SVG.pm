@@ -255,5 +255,14 @@ sub renderblanks
 	return $r->get_pixbuf;
 }
 
+sub highlight
+{
+	my ($self, %args) = @_;
+	my $game = $args{game};
+	my $group = $self->makesquare($game->{_m}{svg}{rack}, x => $args{x}, y => $args{y},
+			squarestyle => "fill-opacity:25%", colour => "red");
+	push @{ $game->{_m}{temprack} }, $group;
+}
+
 1;
 

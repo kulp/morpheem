@@ -408,9 +408,7 @@ sub rackclick_cb
         $self->{_hotindex } = undef;
         $self->{_hotletter} = undef;
     } else {
-        my $group = $self->{_gui}->makesquare($game->{_m}{svg}{rack}, x => $x, y => 0,
-                squarestyle => "fill-opacity:25%", colour => "red");
-        push @{ $game->{_m}{temprack} }, $group;
+        $self->{_gui}->highlight(game => $game, x => $x, y => 0);
 
         $self->{_hotindex } = $x;
         $self->{_hotletter} = $game->{_m}{rack}[$x];
