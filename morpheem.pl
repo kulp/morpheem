@@ -65,7 +65,7 @@ sub _loadboard
     for my $tile (@{ $game->{tiles} }) {
         # TODO handle blanks
         my ($x, $y, $letter, $isblank) = @$tile;
-        $self->{_gui}->makeletter($board, x => $x, y => $y, letter => $letter, isblank => $isblank);
+        $game->{_m}{renderer}->makeletter(parent => $board, x => $x, y => $y, letter => $letter, isblank => $isblank);
         $game->{_m}{board}[$y][$x] = $letter;
     }
 
@@ -75,17 +75,18 @@ sub _loadboard
 sub _setrack
 {
     my ($self, $game, $letters) = @_;
-    $letters ||= $game->{_m}{rack};
+    $game->{_m}{rack} = [ @$letters ] if $letters;
 
-    $self->{_gui}->makerack($game, $letters);
+    $game->{_m}{renderer}->makerack($game->{_m}{rack});
     $self->get_widget('rackarea')->queue_draw;
 }
 
 sub _loadrack
 {
-    my ($self, $game) = @_;
-    $self->_setrack($game, $game->{_m}{me}{rack});
+    my ($self, $game, $rack) = @_;
+    $self->_setrack($game, $rack);
 
+    # TODO why do I need || [] here
     $game->{_m}{rackbak} = [ @{ $game->{_m}{rack} || [] } ];
 }
 
@@ -112,7 +113,7 @@ sub loadgame
     my $me = $game->{_m}{me} = $self->_me($game);
 
     my $desc = decode_json($self->{_www}->get($urlbase . "/board/$game->{board}/")->content)->{content};
-    $self->{_gui}->makeboard($game, $desc);
+    $game->{_m}{renderer}->makeboard($desc);
 
     $self->_loadboard($game);
     $self->_loadrack($game, $me->{rack});
@@ -190,8 +191,6 @@ sub new
         $self = $class->SUPER::new($tmp->filename);
     }
 
-    $self->{_gui} = Morpheem::Renderer::SVG->new(%args);
-
     my $w = $self->{_www} = WWW::Mechanize::GZip->new(
             # XXX lies
             agent           => 'WebFeudClient/1.2.11 (iOS)',
@@ -229,10 +228,11 @@ sub new
     $w->post($urlbase . '/user/games/');
     my $games = decode_json($w->content)->{content}{games};
 
-    for my $game (@$games) {
-        $w->post($urlbase . "/game/$game->{id}/");
-        my $loaded = decode_json($w->content)->{content}{game};
-        $self->loadgame($loaded);
+    for my $gr (@$games) {
+        $w->post($urlbase . "/game/$gr->{id}/");
+        my $game = decode_json($w->content)->{content}{game};
+        $game->{_m}{renderer} = Morpheem::Renderer::SVG->new;
+        $self->loadgame($game);
     }
 
     # hold open the AE engine
@@ -261,7 +261,8 @@ sub boardarea_draw_cb
     my ($self, $b, $event) = @_;
 
     my $size = $self->_boardsize($b);
-    my $pixbuf = $self->{_gui}->renderboard(
+    my $game = $self->{_currentgame};
+    my $pixbuf = $game->{_m}{renderer}->renderboard(
             game   => $self->{_currentgame},
             height => $size,
             width  => $size,
@@ -280,8 +281,8 @@ sub rackarea_draw_cb
     my $width  = $height * 7 + $margin * 8;
     $b->set_size_request($width, $height);
 
-    my $pixbuf = $self->{_gui}->renderrack(
-            game   => $self->{_currentgame},
+    my $game = $self->{_currentgame};
+    my $pixbuf = $game->{_m}{renderer}->renderrack(
             height => $height,
             width  => $width,
         );
@@ -298,8 +299,8 @@ sub blanksarea_draw_cb
     my $height = $b->allocation->height;
     my $width  = int($height / 5 * 6);
     #$b->set_size_request($width, $height);
-    my $pixbuf = $self->{_gui}->renderblanks(
-            game   => $self->{_currentgame},
+    my $game = $self->{_currentgame};
+    my $pixbuf = $game->{_m}{renderer}->renderblanks(
             height => $height,
             width  => $width,
         );
@@ -341,8 +342,7 @@ sub boardclick_cb
     if (defined $self->{_hotletter}) {
         my $letter = $self->{_hotletter};
         my $isblank = $letter eq "";
-        # XXX abstract naming convention
-        my $already = $game->{_m}{svg}{board}->getElementByID("letter_tile_${x}_${y}");
+        my $already = $game->{_m}{renderer}->get_laid_tile(x => $x, y => $y);
         # TODO support swapping with existing tile ?
         return if $already;
 
@@ -352,8 +352,7 @@ sub boardclick_cb
             $letter = chr($blankval);
         }
 
-        my $group = $self->{_gui}->makeletter($game->{_m}{svg}{board}, x => $x, y =>
-                $y, letter => $letter, isblank => $isblank);
+        my $group = $game->{_m}{renderer}->makeletter(x => $x, y => $y, letter => $letter, isblank => $isblank);
         $self->get_widget('buttonclear')->sensitive(1);
         $self->get_widget('buttonplay')->sensitive(1);
 
@@ -408,7 +407,7 @@ sub rackclick_cb
         $self->{_hotindex } = undef;
         $self->{_hotletter} = undef;
     } else {
-        $self->{_gui}->highlight(game => $game, x => $x, y => 0);
+        $game->{_m}{renderer}->highlight(x => $x, y => 0);
 
         $self->{_hotindex } = $x;
         $self->{_hotletter} = $game->{_m}{rack}[$x];
