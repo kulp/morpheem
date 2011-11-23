@@ -65,9 +65,18 @@ my %values = qw(
     u 2   v  4   w 4   x 8   y  4   z 10
 );
 
+package Morpheem::GUI::SVG;
+use strict;
+use warnings;
+
+use SVG;
+use Gnome2::Rsvg;
+
+sub new { bless { }, shift }
+
 sub makesquare
 {
-    my ($board, %args) = @_;
+    my ($self, $board, %args) = @_;
     my ($x, $y, $squarestyle, $textstyle, $colour, $text, $prefix) =
         map { defined($_) ? $_ : "" } @args{qw(x y squarestyle textstyle colour text prefix)};
 
@@ -94,9 +103,9 @@ sub makesquare
 
 sub makeletter
 {
-    my ($board, %args) = @_;
+    my ($self, $board, %args) = @_;
     my ($x, $y, $letter, $isblank) = @args{qw(x y letter isblank)};
-    my $group = makesquare($board, %args, colour => $colours{tile}, prefix =>
+    my $group = $self->makesquare($board, %args, colour => $colours{tile}, prefix =>
             "letter_", text => uc $letter, squarestyle => "fill-opacity:85%",
             textstyle => "fill:black");
 
@@ -117,7 +126,7 @@ sub makeletter
 
 sub drawmargins
 {
-    my ($board, %args) = @_;
+    my ($self, $board, %args) = @_;
     my $g = $board->group(id => 'margins');
     for my $y (0 .. $args{y}) {
         $g->rect(
@@ -169,16 +178,18 @@ sub _makeboard
             my @args = (colour => $specials[$elt * 2 + 1],
                         text   => $specials[$elt * 2 + 0],
                         style  => "fill-opacity:100%");
-            makesquare($g, x => $x, y => $y, @args);
+            $self->makesquare($g, x => $x, y => $y, @args);
             $x++;
         }
         $y++;
     }
 
-    makesquare($g, x => 7, y => 7, colour => $colours{centre}, prefix =>
+    $self->makesquare($g, x => 7, y => 7, colour => $colours{centre}, prefix =>
             "centre_", text => "\N{BLACK STAR}", textstyle =>
             "font-size:@{[1.1*$font_size]}pt");
 }
+
+package Morpheem;
 
 sub _updatescore
 {
@@ -203,7 +214,7 @@ sub _loadboard
     for my $tile (@{ $game->{tiles} }) {
         # TODO handle blanks
         my ($x, $y, $letter, $isblank) = @$tile;
-        makeletter($board, x => $x, y => $y, letter => $letter, isblank => $isblank);
+        $self->{_gui}->makeletter($board, x => $x, y => $y, letter => $letter, isblank => $isblank);
         $game->{_m}{board}[$y][$x] = $letter;
     }
 
@@ -230,7 +241,7 @@ sub _setrack
     my $x = 0;
     $game->{_m}{rack} = $letters;
     for my $tile (@$letters) {
-        makeletter($rack, x => $x, y => 0, letter => uc $tile);
+        $self->{_gui}->makeletter($rack, x => $x, y => 0, letter => uc $tile);
         $x++;
     }
 
@@ -277,10 +288,10 @@ sub loadgame
             width  => $board_size,
             height => $board_size,
         );
-    drawmargins($board, x => 15, y => 15, board_height => $board_size, board_width => $board_size);
+    $self->{_gui}->drawmargins($board, x => 15, y => 15, board_height => $board_size, board_width => $board_size);
 
     my $desc = decode_json($self->{_www}->get($urlbase . "/board/$game->{board}/")->content)->{content};
-    $self->_makeboard($board, $desc);
+    $self->{_gui}->_makeboard($board, $desc);
 
     $self->_loadboard($game);
     $self->_loadrack($game, $me->{rack});
@@ -357,6 +368,8 @@ sub new
         close $tmp;
         $self = $class->SUPER::new($tmp->filename);
     }
+
+    $self->{_gui} = Morpheem::GUI::SVG->new(%args);
 
     my $w = $self->{_www} = WWW::Mechanize::GZip->new(
             # XXX lies
@@ -476,11 +489,11 @@ sub blanksarea_draw_cb
     if (not $game->{_m}{svg}{blanks}) {
         my $svg = $game->{_m}{svg}{blanks} ||= SVG->new(width => $blanks_width, height => $blanks_height);
         my $g = $svg->group;
-        drawmargins($g, x => 6, y => 5, board_width => $blanks_width, board_height => $blanks_height);
+        $self->{_gui}->drawmargins($g, x => 6, y => 5, board_width => $blanks_width, board_height => $blanks_height);
         for my $i (0 .. 25) {
             my $x = $i % 6;
             my $y = int($i / 6);
-            makeletter($g, x => $x, y => $y, letter => chr(ord('A') + $i), isblank => 1);
+            $self->{_gui}->makeletter($g, x => $x, y => $y, letter => chr(ord('A') + $i), isblank => 1);
         }
     }
     my $blankssvg = $game->{_m}{svg}{blanks};
@@ -541,7 +554,8 @@ sub boardclick_cb
             $letter = chr($blankval);
         }
 
-        my $group = makeletter($game->{_m}{svg}{board}, x => $x, y => $y, letter => $letter, isblank => $isblank);
+        my $group = $self->{_gui}->makeletter($game->{_m}{svg}{board}, x => $x, y =>
+                $y, letter => $letter, isblank => $isblank);
         $self->get_widget('buttonclear')->sensitive(1);
         $self->get_widget('buttonplay')->sensitive(1);
 
@@ -596,8 +610,8 @@ sub rackclick_cb
         $self->{_hotindex } = undef;
         $self->{_hotletter} = undef;
     } else {
-        my $group = makesquare($game->{_m}{svg}{rack}, x => $x, y => 0, squarestyle
-                => "fill-opacity:25%", colour => "red");
+        my $group = $self->{_gui}->makesquare($game->{_m}{svg}{rack}, x => $x, y => 0,
+                squarestyle => "fill-opacity:25%", colour => "red");
         push @{ $game->{_m}{temprack} }, $group;
 
         $self->{_hotindex } = $x;
