@@ -21,8 +21,6 @@ use Event;
 use AnyEvent;
 use Coro;
 
-use Gnome2::Rsvg;
-
 use File::Temp;
 use JSON;
 use List::MoreUtils qw(uniq);
@@ -37,6 +35,7 @@ my $glade_file = "board.glade";
 my $serverid = sprintf "%02d", int rand 7;
 my $urlbase = qq(http://game$serverid.wordfeud.com/wf);
 
+# XXX how naughty
 my $square_size = $Morpheem::Renderer::SVG::square_size;
 my $margin = $Morpheem::Renderer::SVG::margin;
 
@@ -261,17 +260,13 @@ sub boardarea_draw_cb
 {
     my ($self, $b, $event) = @_;
 
-    my $r = Gnome2::Rsvg::Handle->new;
-    my $game = $self->{_currentgame};
-
-    my $boardsvg = $game->{_m}{svg}{board} or return 1; # no propagate
     my $size = $self->_boardsize($b);
-
-    $r->set_size_callback(sub { ($size, $size) });
-    $r->write($boardsvg->xmlify) or die "Failed to write SVG to RSVG handle";
-    $r->close or die "Failed to parse SVG";
-    # XXX deprecated, use Cairo
-    $r->get_pixbuf->render_to_drawable($b->window, $b->style->fg_gc($b->state),
+    my $pixbuf = $self->{_gui}->renderboard(
+            game   => $self->{_currentgame},
+            height => $size,
+            width  => $size,
+        );
+    $pixbuf->render_to_drawable($b->window, $b->style->fg_gc($b->state),
             0, 0, 0, 0, $size, $size, "GDK_RGB_DITHER_NONE", 0, 0);
 
     return 0; # propagate
@@ -281,18 +276,16 @@ sub rackarea_draw_cb
 {
     my ($self, $b, $event) = @_;
 
-    my $r = Gnome2::Rsvg::Handle->new;
-    my $game = $self->{_currentgame};
-
-    my $racksvg = $game->{_m}{svg}{rack} or return 1; # no propagate
     my $height = $b->allocation->height;
     my $width  = $height * 7 + $margin * 8;
     $b->set_size_request($width, $height);
-    $r->set_size_callback(sub { ($height, $width) });
-    $r->write($racksvg->xmlify) or die "Failed to write SVG to RSVG handle";
-    $r->close or die "Failed to parse SVG";
-    # XXX deprecated, use Cairo
-    $r->get_pixbuf->render_to_drawable($b->window, $b->style->fg_gc($b->state),
+
+    my $pixbuf = $self->{_gui}->renderrack(
+            game   => $self->{_currentgame},
+            height => $height,
+            width  => $width,
+        );
+    $pixbuf->render_to_drawable($b->window, $b->style->fg_gc($b->state),
             0, 0, 0, 0, $width, $height, "GDK_RGB_DITHER_NONE", 0, 0);
 
     return 0; # propagate
@@ -302,32 +295,15 @@ sub blanksarea_draw_cb
 {
     my ($self, $b, $event) = @_;
 
-    my $r = Gnome2::Rsvg::Handle->new;
-    my $game = $self->{_currentgame};
-
-    my $blanks_width  = 6 * $square_size + 7 * $margin;
-    my $blanks_height = 5 * $square_size + 6 * $margin;
-
-    if (not $game->{_m}{svg}{blanks}) {
-        my $svg = $game->{_m}{svg}{blanks} ||= SVG->new(width => $blanks_width, height => $blanks_height);
-        my $g = $svg->group;
-        $self->{_gui}->drawmargins($g, x => 6, y => 5, board_width => $blanks_width, board_height => $blanks_height);
-        for my $i (0 .. 25) {
-            my $x = $i % 6;
-            my $y = int($i / 6);
-            $self->{_gui}->makeletter($g, x => $x, y => $y, letter => chr(ord('A') + $i), isblank => 1);
-        }
-    }
-    my $blankssvg = $game->{_m}{svg}{blanks};
-
     my $height = $b->allocation->height;
     my $width  = int($height / 5 * 6);
     #$b->set_size_request($width, $height);
-    $r->set_size_callback(sub { ($height, $width) });
-    $r->write($blankssvg->xmlify) or die "Failed to write SVG to RSVG handle";
-    $r->close or die "Failed to parse SVG";
-    # XXX deprecated, use Cairo
-    $r->get_pixbuf->render_to_drawable($b->window, $b->style->fg_gc($b->state),
+    my $pixbuf = $self->{_gui}->renderblanks(
+            game   => $self->{_currentgame},
+            height => $height,
+            width  => $width,
+        );
+    $pixbuf->render_to_drawable($b->window, $b->style->fg_gc($b->state),
             0, 0, 0, 0, $width, $height, "GDK_RGB_DITHER_NONE", 0, 0);
 
     return 0; # propagate
