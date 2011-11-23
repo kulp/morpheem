@@ -81,8 +81,6 @@ sub makesquare
 
     my $group = $board->group(id => "${prefix}tile_${x}_${y}");
     my $square = $group->rect(
-            # TODO ids ?
-            #id     => "rect_${x}_${y}",
             width  => $square_size,
             height => $square_size,
             x      => $xc,
@@ -125,9 +123,9 @@ sub makeletter
 sub drawmargins
 {
     my ($board, %args) = @_;
-
+    my $g = $board->group(id => 'margins');
     for my $y (0 .. $args{y}) {
-        $board->rect(
+        $g->rect(
                 id     => "margin_row_$y",
                 y      => $y * ($square_size + $margin),
                 height => $margin,
@@ -136,7 +134,7 @@ sub drawmargins
             );
     }
     for my $x (0 .. $args{x}) {
-        $board->rect(
+        $g->rect(
                 id     => "margin_col_$x",
                 x      => $x * ($square_size + $margin),
                 height => $args{board_height},
@@ -144,6 +142,8 @@ sub drawmargins
                 style  => "fill:$colours{border}",
             );
     }
+
+    return $g;
 }
 
 # four reflection symmetries implicit
@@ -201,7 +201,7 @@ sub _updatescore
 sub _loadboard
 {
     my ($self, $game) = @_;
-    my $board = $game->{_m}{boardlayer};
+    my $board = $game->{_m}{boardgroup};
     for my $tile (@{ $game->{tiles} }) {
         # TODO handle blanks
         my ($x, $y, $letter, $isblank) = @$tile;
@@ -217,9 +217,9 @@ sub _setrack
     my ($self, $game, $letters) = @_;
     $letters ||= $game->{_m}{rack};
 
+    # TODO don't reconstruct from scratch all the time
     my $racksvg = $game->{_m}{svg}{rack} = SVG->new(width => $rack_width, height => $rack_height);
-    my $racklayer = $racksvg->group(id => 'layer');
-    my $rack = $self->{rack} = $racklayer->group(id => 'rack');
+    my $rack = $self->{rack} = $racksvg->group(id => 'rack');
     $rack->rect(
             id     => "rect_rack",
             style  => "fill:$colours{rack}",
@@ -270,8 +270,7 @@ sub loadgame
     my $me = $game->{_m}{me} = $self->_me($game);
 
     my $boardsvg = $game->{_m}{svg}{board} = SVG->new(width => $board_size, height => $board_size);
-    my $boardlayer = $boardsvg->group(id => 'layer');
-    my $board = $game->{_m}{boardlayer} = $boardlayer->group(id => 'board');
+    my $board = $game->{_m}{boardgroup} = $boardsvg->group(id => 'board');
     $board->rect(
             id     => "rect_board",
             style  => "fill:$colours{board}",
@@ -296,10 +295,9 @@ sub loadgame
     my $myturn      = $self->_myturn($game);
     my $players     = $game->{players};
     my $otherplayer = $players->[1 - $me->{position}]; # TODO support more than two players ?
-    my $data        = $sl->{data};
+    my $rows        = $sl->{data};
 
     my $small_pixbuf;
-    # TODO make image fetching asynch
     # TODO don't fetch the same image more than once
     async {
         eval {
@@ -307,14 +305,15 @@ sub loadgame
             my $w = $self->{_www}->clone;
             $w->get("http://avatars.wordfeud.com/$pixels/$otherplayer->{id}");
             $w->save_content($file);
+            # TODO avoid hitting filesystem ?
             my $large_pixbuf = Gtk2::Gdk::Pixbuf->new_from_file($file);
             $small_pixbuf = $large_pixbuf->scale_simple(48, 48, "GDK_INTERP_HYPER");
         };
 
-        push @$data,
+        push @$rows,
             [ $game->{id}, $icons[$myturn], $small_pixbuf, $otherplayer->{username} ];
 
-        $sl->select($#$data);
+        $sl->select($#$rows);
         $self->{_currentgame} = $game; # XXX
     };
 }
