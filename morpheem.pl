@@ -35,10 +35,6 @@ my $glade_file = "board.glade";
 my $serverid = sprintf "%02d", int rand 7;
 my $urlbase = qq(http://game$serverid.wordfeud.com/wf);
 
-# XXX how naughty
-my $square_size = $Morpheem::Renderer::SVG::square_size;
-my $margin = $Morpheem::Renderer::SVG::margin;
-
 # XXX
 my $pixels = 60;
 
@@ -215,30 +211,10 @@ sub new
     $sl->get_column(0)->set(visible => 0);
     $sl->signal_connect(row_activated => sub { $self->_row_activated_cb(@_) });
 
-    $self->{_www}->post($urlbase . '/user/login/',
-            Content_Type => 'application/json',
-            Content      => encode_json({
-                                username => $args{username},
-                                password => $args{password},
-                            }),
-        );
-
-    $self->{_me} = decode_json($w->content)->{content};
-
-    $w->post($urlbase . '/user/games/');
-    my $games = decode_json($w->content)->{content}{games};
-
-    for my $gr (@$games) {
-        $w->post($urlbase . "/game/$gr->{id}/");
-        my $game = decode_json($w->content)->{content}{game};
-        $game->{_m}{renderer} = Morpheem::Renderer::SVG->new;
-        $self->loadgame($game);
-    }
-
     # hold open the AE engine
     $self->{_run} = AnyEvent->condvar;
 
-    $self->get_widget('mainwindow')->set_title("Morpheem ($self->{_me}{username})");
+    $self->get_widget('mainwindow')->set_title("Morpheem");
 
     return $self;
 }
@@ -278,7 +254,7 @@ sub rackarea_draw_cb
     my ($self, $b, $event) = @_;
 
     my $height = $b->allocation->height;
-    my $width  = $height * 7 + $margin * 8;
+    my $width  = $height * 7;
     $b->set_size_request($width, $height);
 
     my $game = $self->{_currentgame};
@@ -323,12 +299,6 @@ sub blanksclick_cb
     }
 
     return 0;
-}
-
-sub blanksdialog_cancel_cb
-{
-    my ($self, $b) = @_;
-    $self->get_widget('blanksdialog')->hide;
 }
 
 sub boardclick_cb
@@ -602,6 +572,49 @@ sub buttonclear_clicked_cb
         );
 
     return 0; # propagate ?
+}
+
+sub show_login_box
+{
+    my ($self) = @_;
+
+    my $dialog = $self->get_widget('dialoglogin');
+    $dialog->set_default_response(0);
+    my $response = $dialog->run;
+
+    my $username = $self->get_widget('entryusername')->get_text;
+    my $password = $self->get_widget('entrypassword')->get_text;
+
+    warn "$username:$password";
+    $dialog->hide;
+
+    my $w = $self->{_www};
+    $w->post($urlbase . '/user/login/',
+            Content_Type => 'application/json',
+            Content      => encode_json({
+                                username => $username,
+                                password => $password,
+                            }),
+        );
+
+    my $decoded = decode_json($w->content);
+    if ($decoded->{status} ne "success") {
+        # XXX show user
+        return;
+    }
+    $self->{_me} = $decoded->{content};
+
+    $w->post($urlbase . '/user/games/');
+    my $games = decode_json($w->content)->{content}{games};
+
+    for my $gr (@$games) {
+        $w->post($urlbase . "/game/$gr->{id}/");
+        my $game = decode_json($w->content)->{content}{game};
+        $game->{_m}{renderer} = Morpheem::Renderer::SVG->new;
+        $self->loadgame($game);
+    }
+
+    $self->get_widget('mainwindow')->set_title("Morpheem ($self->{_me}{username})");
 }
 
 sub gtk_main_quit  { Gtk2->main_quit }
