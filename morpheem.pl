@@ -804,7 +804,11 @@ package main;
 use strict;
 use warnings;
 
-my $username = shift or die "supply username on command-line, password must be 'qqqqqq'";
-my $pwhash = q(11c66b2d9af3dae28a9df67c22167949fa1d8926);
+use Digest::SHA1 qw(sha1_hex);
+
+my $username = shift or die "supply username on command-line";
+my $password = 'qqqqqq';
+my $salt = "JarJarBinks9";
+my $pwhash = sha1_hex($password . $salt);
 Morpheem->new(username => $username, password => $pwhash)->run;
 
