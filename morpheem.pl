@@ -21,12 +21,13 @@ use Event;
 use AnyEvent;
 use Coro;
 
+use Digest::SHA1 qw(sha1_hex);
 use File::Temp;
 use JSON;
 use List::MoreUtils qw(uniq);
 use List::Util qw(min sum);
 use WWW::Mechanize::Gzip;
-use YAML qw(LoadFile);
+use YAML qw(Dump);
 
 use XXX;
 
@@ -146,6 +147,24 @@ sub loadgame
     };
 }
 
+# TODO everything ?
+sub draw_everything
+{
+    my ($self) = @_;
+
+    $self->get_widget($_)->queue_draw for qw(
+            rackarea
+            boardarea
+            buttonplay
+            buttonclear
+            labelUser0points
+            labelUser1points
+            labelUser0points
+            labelUser1points
+            labeltilesleft
+        );
+}
+
 sub _row_activated_cb
 {
     my ($self, $sl, $path, $column) = @_;
@@ -160,17 +179,7 @@ sub _row_activated_cb
     $self->get_widget('buttonplay')->sensitive($self->_tilesout($game));
     $self->get_widget('buttonclear')->sensitive($self->_tilesout($game));
 
-    $self->get_widget($_)->queue_draw for qw(
-            rackarea
-            boardarea
-            buttonplay
-            buttonclear
-            labelUser0points
-            labelUser1points
-            labelUser0points
-            labelUser1points
-            labeltilesleft
-        );
+    $self->draw_everything;
 }
 
 sub new
@@ -237,7 +246,7 @@ sub boardarea_draw_cb
     my ($self, $b, $event) = @_;
 
     my $size = $self->_boardsize($b);
-    my $game = $self->{_currentgame};
+    my $game = $self->{_currentgame} or return;
     my $pixbuf = $game->{_m}{renderer}->renderboard(
             game   => $self->{_currentgame},
             height => $size,
@@ -257,7 +266,7 @@ sub rackarea_draw_cb
     my $width  = $height * 7;
     $b->set_size_request($width, $height);
 
-    my $game = $self->{_currentgame};
+    my $game = $self->{_currentgame} or return;
     my $pixbuf = $game->{_m}{renderer}->renderrack(
             height => $height,
             width  => $width,
@@ -574,47 +583,86 @@ sub buttonclear_clicked_cb
     return 0; # propagate ?
 }
 
+sub decode_error
+{
+    my %codes = (
+            wrong_password   => "Wrong password for given user",
+            unknown_username => "Unknown username",
+        );
+
+    my ($self, $msg) = @_;
+    if (my $explicit = $msg->{message}) {
+        return $explicit;
+    } elsif (my $decoded = $codes{ $msg->{type} }) {
+        return $decoded;
+    } else {
+        return "Unknown error : " . Dump($msg);
+    }
+}
+
 sub show_login_box
 {
     my ($self) = @_;
 
-    my $dialog = $self->get_widget('dialoglogin');
+    my $dialog = $self->get_widget('logindialog');
     $dialog->set_default_response(0);
-    my $response = $dialog->run;
 
-    my $username = $self->get_widget('entryusername')->get_text;
-    my $password = $self->get_widget('entrypassword')->get_text;
+    TRY: {
+        my $response = $dialog->run;
 
-    warn "$username:$password";
-    $dialog->hide;
+        if ($response =~ /^(delete-event|close|1)$/) {
+            $dialog->hide;
+            return;
+        }
 
-    my $w = $self->{_www};
-    $w->post($urlbase . '/user/login/',
-            Content_Type => 'application/json',
-            Content      => encode_json({
-                                username => $username,
-                                password => $password,
-                            }),
-        );
+        my $username = $self->get_widget('entryusername')->get_text;
+        my $password = $self->get_widget('entrypassword')->get_text;
 
-    my $decoded = decode_json($w->content);
-    if ($decoded->{status} ne "success") {
-        # XXX show user
-        return;
+        my $salt = "JarJarBinks9";
+        my $pwhash = sha1_hex($password . $salt);
+
+        my $w = $self->{_www};
+        $w->post($urlbase . '/user/login/',
+                Content_Type => 'application/json',
+                Content      => encode_json({
+                                    username => $username,
+                                    password => $pwhash,
+                                }),
+            );
+
+        my $decoded = decode_json($w->content);
+        if ($decoded->{status} ne "success") {
+            # XXX
+            my $msg = $self->decode_error($decoded->{content});
+            my $box = Gtk2::MessageDialog->new(
+                    $dialog,
+                    "GTK_DIALOG_DESTROY_WITH_PARENT",
+                    "GTK_MESSAGE_ERROR",
+                    "GTK_BUTTONS_CLOSE",
+                    "Login failure : %s",
+                    $msg,
+                );
+            $box->run;
+            $box->destroy;
+            next TRY;
+        }
+
+        $dialog->hide;
+        $self->{_me} = $decoded->{content};
+
+        $w->post($urlbase . '/user/games/');
+        my $games = decode_json($w->content)->{content}{games};
+
+        for my $gr (@$games) {
+            $w->post($urlbase . "/game/$gr->{id}/");
+            my $game = decode_json($w->content)->{content}{game};
+            $game->{_m}{renderer} = Morpheem::Renderer::SVG->new;
+            $self->loadgame($game);
+        }
+
+        $self->get_widget('mainwindow')->set_title("Morpheem ($self->{_me}{username})");
+        $self->draw_everything;
     }
-    $self->{_me} = $decoded->{content};
-
-    $w->post($urlbase . '/user/games/');
-    my $games = decode_json($w->content)->{content}{games};
-
-    for my $gr (@$games) {
-        $w->post($urlbase . "/game/$gr->{id}/");
-        my $game = decode_json($w->content)->{content}{game};
-        $game->{_m}{renderer} = Morpheem::Renderer::SVG->new;
-        $self->loadgame($game);
-    }
-
-    $self->get_widget('mainwindow')->set_title("Morpheem ($self->{_me}{username})");
 }
 
 sub gtk_main_quit  { Gtk2->main_quit }
@@ -625,11 +673,5 @@ package main;
 use strict;
 use warnings;
 
-use Digest::SHA1 qw(sha1_hex);
-
-my $username = shift or die "supply username on command-line";
-my $password = 'qqqqqq';
-my $salt = "JarJarBinks9";
-my $pwhash = sha1_hex($password . $salt);
-Morpheem->new(username => $username, password => $pwhash)->run;
+Morpheem->new->run;
 

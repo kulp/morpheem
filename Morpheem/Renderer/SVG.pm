@@ -7,9 +7,8 @@ use charnames ':full';
 use Gnome2::Rsvg;
 use SVG;
 
-# XXX
-our $square_size = 25;
-our $margin      = 1;
+my $square_size = 25;
+my $margin      = 1;
 
 my $board_size  = 15 * $square_size + 16 * $margin;
 my $rack_width  = 7 * $square_size + 8 * $margin;
