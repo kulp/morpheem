@@ -109,7 +109,8 @@ sub loadgame
 
     my $me = $game->{_m}{me} = $self->_me($game);
 
-    my $desc = decode_json($self->{_www}->get($urlbase . "/board/$game->{board}/")->content)->{content};
+    my $w = $self->{_www};
+    my $desc = decode_json($w->get($urlbase . "/board/$game->{board}/")->content)->{content};
     $game->{_m}{renderer}->makeboard($desc);
 
     $self->_loadboard($game);
@@ -131,7 +132,7 @@ sub loadgame
     async {
         eval {
             my $file = File::Temp->new;
-            my $w = $self->{_www}->clone;
+            my $w = $w->clone;
             $w->get("http://avatars.wordfeud.com/$pixels/$otherplayer->{id}");
             $w->save_content($file);
             # TODO avoid hitting filesystem ?
@@ -182,6 +183,43 @@ sub _row_activated_cb
     $self->draw_everything;
 }
 
+sub invite_received
+{
+    my ($self, $n) = @_;
+    warn "invitation received";
+    WWW $n;
+}
+
+sub _handle_notification
+{
+    my ($self, $n) = @_;
+    # - created: 1322701425.84814
+    #   type: invite_received
+    #   user_id: 9401454
+    #   username: greeneries
+    WWW $n;
+    my $type = $n->{type};
+    eval { $self->$type($n) };
+}
+
+sub _check_notifications
+{
+    my ($self) = @_;
+    warn "checking notifications";
+    my $w = $self->{_www};
+    $w->post($urlbase . "/user/notifications/");
+    my $c = decode_json($w->content);
+    if ($c->{status} ne "success") {
+        warn "failure in notifications poll";
+    }
+
+    return unless ref $c->{content};
+
+    for my $n (my @entries = @{ $c->{content}{entries} }) {
+        $self->_handle_notification($n);
+    }
+}
+
 sub new
 {
     my ($class, %args) = @_;
@@ -219,9 +257,6 @@ sub new
     $sl->get_selection->set_mode("browse"); # always have one selected
     $sl->get_column(0)->set(visible => 0);
     $sl->signal_connect(row_activated => sub { $self->_row_activated_cb(@_) });
-
-    # hold open the AE engine
-    $self->{_run} = AnyEvent->condvar;
 
     $self->get_widget('mainwindow')->set_title("Morpheem");
 
@@ -600,6 +635,30 @@ sub decode_error
     }
 }
 
+sub _decode_content
+{
+    my ($self, $json) = @_;
+    my $decoded = decode_json($json);
+    my $content = $decoded->{content};
+    if ($decoded->{status} eq 'success') {
+        return $content;
+    } else {
+        my $msg = $self->decode_error($content);
+        my $box = Gtk2::MessageDialog->new(
+                undef,
+                "GTK_DIALOG_DESTROY_WITH_PARENT",
+                "GTK_MESSAGE_ERROR",
+                "GTK_BUTTONS_CLOSE",
+                "Error : %s",
+                $msg,
+            );
+        $box->run;
+        $box->destroy;
+
+        return;
+    }
+}
+
 sub show_login_box
 {
     my ($self) = @_;
@@ -630,25 +689,12 @@ sub show_login_box
                                 }),
             );
 
-        my $decoded = decode_json($w->content);
-        if ($decoded->{status} ne "success") {
-            # XXX
-            my $msg = $self->decode_error($decoded->{content});
-            my $box = Gtk2::MessageDialog->new(
-                    $dialog,
-                    "GTK_DIALOG_DESTROY_WITH_PARENT",
-                    "GTK_MESSAGE_ERROR",
-                    "GTK_BUTTONS_CLOSE",
-                    "Login failure : %s",
-                    $msg,
-                );
-            $box->run;
-            $box->destroy;
-            next TRY;
-        }
-
+        next TRY unless my $decoded = $self->_decode_content($w->content);
         $dialog->hide;
         $self->{_me} = $decoded->{content};
+
+        $w->post($urlbase . '/user/status/');
+        my $status = decode_json($w->content);
 
         $w->post($urlbase . '/user/games/');
         my $games = decode_json($w->content)->{content}{games};
@@ -662,6 +708,8 @@ sub show_login_box
 
         $self->get_widget('mainwindow')->set_title("Morpheem ($self->{_me}{username})");
         $self->draw_everything;
+
+        $self->{_update} = AnyEvent->timer(after => 0, interval => 20, cb => sub { $self->_check_notifications });
     }
 }
 
