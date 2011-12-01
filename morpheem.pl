@@ -16,6 +16,7 @@ use Morpheem::Renderer::SVG;
 
 use Gtk2 -init;
 use Gtk2::SimpleList;
+use Gtk2::Ex::Dialogs destroy_with_parent => 1;
 use Glib::Event;
 use Event;
 use AnyEvent;
@@ -35,6 +36,7 @@ my $glade_file = "board.glade";
 
 my $serverid = sprintf "%02d", int rand 7;
 my $urlbase = qq(http://game$serverid.wordfeud.com/wf);
+my @yesnoicons;
 
 # XXX
 my $pixels = 60;
@@ -110,7 +112,7 @@ sub loadgame
     my $me = $game->{_m}{me} = $self->_me($game);
 
     my $w = $self->{_www};
-    my $desc = decode_json($w->get($urlbase . "/board/$game->{board}/")->content)->{content};
+    my $desc = $self->_decode_content($w->get($urlbase . "/board/$game->{board}/")->content);
     $game->{_m}{renderer}->makeboard($desc);
 
     $self->_loadboard($game);
@@ -119,9 +121,6 @@ sub loadgame
     $self->{_games}{ $game->{id} } = $game;
 
     my $sl          = $self->{_list};
-    my $yes         = $sl->render_icon("gtk-yes", "small-toolbar");
-    my $no          = $sl->render_icon("gtk-no" , "small-toolbar");
-    my @icons       = ($no, $yes);
     my $myturn      = $self->_myturn($game);
     my $players     = $game->{players};
     my $otherplayer = $players->[1 - $me->{position}]; # TODO support more than two players ?
@@ -141,10 +140,12 @@ sub loadgame
         };
 
         push @$rows,
-            [ $game->{id}, $icons[$myturn], $small_pixbuf, $otherplayer->{username} ];
+            [ $game->{id}, $yesnoicons[$myturn], $small_pixbuf, $otherplayer->{username} ];
 
-        $sl->select($#$rows);
-        $self->{_currentgame} = $game; # XXX
+        if (@$rows == 1) {
+            $sl->select($#$rows);
+            $self->{_currentgame} = $game;
+        }
     };
 }
 
@@ -183,23 +184,141 @@ sub _row_activated_cb
     $self->draw_everything;
 }
 
-sub invite_received
+sub _handle_invite_received
+{
+    my ($self, $invite) = @_;
+
+    my $user = $invite->{inviter};
+    my $rules = $invite->{ruleset}; # XXX convert
+    my $board = $invite->{board_type};
+    my $result = Gtk2::Ex::Dialogs::Question->ask(
+            title       => "Invitation received",
+            text        => "Invitation by $user to play with ruleset $rules and board type $board. Accept ?",
+            default_yes => 1,
+        );
+
+    my $w = $self->{_www};
+    if ($result eq 'yes') {
+        $w->post($urlbase . "/invite/$invite->{id}/accept/");
+    } elsif ($result eq 'no') {
+        $w->post($urlbase . "/invite/$invite->{id}/reject/");
+    }
+    # XXX check result of post
+}
+
+sub _handle_user_status
+{
+    my ($self) = @_;
+    my $w = $self->{_www};
+
+    $w->post($urlbase . '/user/status/');
+    my $status = $self->_decode_content($w->content);
+
+    $self->_handle_invite_received($_) for @{ $status->{invites_received} };
+    # XXX rest of status
+}
+
+sub _handle_move_resign
 {
     my ($self, $n) = @_;
-    warn "invitation received";
-    WWW $n;
+    #---
+    #created: 1322708935.04717
+    #game_id: 167035101
+    #move_type: resign
+    #type: move
+    #user_id: 9401454
+    #username: greeneries
+    #...
+    Gtk2::Ex::Dialogs::Message("$n->{username} resigned in game $n->{game_id}");
+    # TODO make game not ready
+}
+
+sub _handle_move_move
+{
+    my ($self, $n) = @_;
+    # ---
+    # created: 1322707406.52484
+    # game_id: 167035101
+    # main_word: NE...
+    # move:
+    #   -
+    #     - 7
+    #     - 0
+    #     - N
+    #     - &1 !!perl/scalar:JSON::XS::Boolean 0
+    #   -
+    #     - 7
+    #     - 1
+    #     - E
+    #     - *1
+    #...
+    # move_type: move
+    # points: 64
+    # type: move
+    # user_id: 9401454
+    # username: greeneries
+    # ...
+    my $game = $self->{_games}{ $n->{game_id} };
+    for my $m (@{ $n->{move} }) {
+        my ($x, $y, $letter, $isblank) = @$m;
+        my $already = $game->{_m}{renderer}->get_laid_tile(x => $x, y => $y);
+        if ($already) {
+            $self->_back_out(delete $game->{_m}{temprack});
+            $self->get_widget($_)->queue_draw for qw(
+                    rackarea boardarea buttonplay buttonclear
+                );
+        }
+
+        $game->{_m}{renderer}->makeletter(x => $x, y => $y, letter => $letter, isblank => $isblank);
+    }
+}
+
+sub _handle_notification_move
+{
+    my ($self, $n) = @_;
+    my $type = $n->{move_type};
+    eval {
+        # Assume the method exists and trap it otherwise
+        my $method = "_handle_move_$type";
+        $self->$method($n);
+    };
+}
+
+sub _handle_notification_invite_received
+{
+    my ($self, $n) = @_;
+    $self->_handle_user_status;
+}
+
+sub _fetch_game_by_id
+{
+    my ($self, $id) = @_;
+
+    my $w = $self->{_www};
+    $w->post($urlbase . "/game/$id/");
+    my $game = $self->_decode_content($w->content)->{game};
+    $game->{_m}{renderer} = Morpheem::Renderer::SVG->new;
+
+    return $game;
+}
+
+sub _handle_notification_new_game
+{
+    my ($self, $n) = @_;
+    my $game = $self->_fetch_game_by_id($n->{game_id});
+    $self->loadgame($game);
 }
 
 sub _handle_notification
 {
     my ($self, $n) = @_;
-    # - created: 1322701425.84814
-    #   type: invite_received
-    #   user_id: 9401454
-    #   username: greeneries
     WWW $n;
     my $type = $n->{type};
-    eval { $self->$type($n) };
+    eval {
+        # Assume the method exists and trap it otherwise
+        my $method = "_handle_notification_$type";
+        $self->$method($n);
+    };
 }
 
 sub _check_notifications
@@ -208,14 +327,8 @@ sub _check_notifications
     warn "checking notifications";
     my $w = $self->{_www};
     $w->post($urlbase . "/user/notifications/");
-    my $c = decode_json($w->content);
-    if ($c->{status} ne "success") {
-        warn "failure in notifications poll";
-    }
-
-    return unless ref $c->{content};
-
-    for my $n (my @entries = @{ $c->{content}{entries} }) {
+    return unless my $c = $self->_decode_content($w->content);
+    for my $n (my @entries = @{ $c->{entries} }) {
         $self->_handle_notification($n);
     }
 }
@@ -259,6 +372,7 @@ sub new
     $sl->signal_connect(row_activated => sub { $self->_row_activated_cb(@_) });
 
     $self->get_widget('mainwindow')->set_title("Morpheem");
+    @yesnoicons = map { $self->{_list}->render_icon("gtk-$_", "small-toolbar") } qw(no yes);
 
     return $self;
 }
@@ -575,13 +689,11 @@ sub _play_move
             Content      => encode_json(\%data),
             Content_Type => 'application/json',
         );
-    my $response = decode_json($w->content);
-    if ($response->{status} ne "success") {
-        WWW $response;
-    } else {
-        $self->_setrack($game, [ @{ $game->{_m}{rack} }, @{ $response->{content}{new_tiles} } ]);
-        # TODO we shouldn't have to reload the game all the time
-    }
+    my $response = $self->_decode_content($w->content);
+    return unless $response;
+    $self->_setrack($game, [ @{ $game->{_m}{rack} }, @{ $response->{new_tiles} } ]);
+    # XXX $self->{_list}
+    # TODO we shouldn't have to reload the game all the time
 }
 
 sub buttonplay_clicked_cb
@@ -644,16 +756,7 @@ sub _decode_content
         return $content;
     } else {
         my $msg = $self->decode_error($content);
-        my $box = Gtk2::MessageDialog->new(
-                undef,
-                "GTK_DIALOG_DESTROY_WITH_PARENT",
-                "GTK_MESSAGE_ERROR",
-                "GTK_BUTTONS_CLOSE",
-                "Error : %s",
-                $msg,
-            );
-        $box->run;
-        $box->destroy;
+        Gtk2::Ex::Dialogs::ErrorMsg->new_and_run(title => "Error", text => "Error : $msg", modal => 1);
 
         return;
     }
@@ -691,18 +794,15 @@ sub show_login_box
 
         next TRY unless my $decoded = $self->_decode_content($w->content);
         $dialog->hide;
-        $self->{_me} = $decoded->{content};
+        $self->{_me} = $decoded;
 
-        $w->post($urlbase . '/user/status/');
-        my $status = decode_json($w->content);
+        $self->_handle_user_status;
 
         $w->post($urlbase . '/user/games/');
-        my $games = decode_json($w->content)->{content}{games};
+        my $games = $self->_decode_content($w->content)->{games};
 
         for my $gr (@$games) {
-            $w->post($urlbase . "/game/$gr->{id}/");
-            my $game = decode_json($w->content)->{content}{game};
-            $game->{_m}{renderer} = Morpheem::Renderer::SVG->new;
+            my $game = $self->_fetch_game_by_id($gr->{id});
             $self->loadgame($game);
         }
 
