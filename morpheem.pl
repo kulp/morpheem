@@ -15,7 +15,7 @@ use utf8;
 use Morpheem::Renderer::SVG;
 
 use Gtk2 -init;
-use Gtk2::SimpleList;
+use Gtk2::Ex::Simple::List;
 use Gtk2::Ex::Dialogs destroy_with_parent => 1;
 use Glib::Event;
 use Event;
@@ -170,7 +170,7 @@ sub draw_everything
 sub _row_activated_cb
 {
     my ($self, $sl, $path, $column) = @_;
-    my $row_ref = $sl->get_row_data_from_path($path);
+    my $row_ref = $sl->{data}[ ($path->get_indices)[0] ];
     my $gameid  = $row_ref->[0]; # id field
     my $game    = $self->{_games}{$gameid};
 
@@ -358,7 +358,7 @@ sub new
                 ),
         );
 
-    my $sl = $self->{_list} = Gtk2::SimpleList->new_from_treeview(
+    my $sl = $self->{_list} = Gtk2::Ex::Simple::List->new_from_treeview(
             $self->get_widget('treeviewgames'),
             id     => 'text',
             State  => 'pixbuf',
