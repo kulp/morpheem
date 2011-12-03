@@ -46,8 +46,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
     <property name="can_focus">False</property>
     <property name="border_width">5</property>
     <property name="type_hint">dialog</property>
-    <signal name="close" handler="blanksdialog_cancel_cb" swapped="no"/>
-    <signal name="response" handler="blanksdialog_cancel_cb" swapped="no"/>
+    <signal name="close" handler="hide_dialog" swapped="no"/>
+    <signal name="response" handler="hide_dialog" swapped="no"/>
     <child internal-child="vbox">
       <widget class="GtkVBox" id="dialog-vbox2">
         <property name="visible">True</property>

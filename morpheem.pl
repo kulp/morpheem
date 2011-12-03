@@ -105,6 +105,20 @@ sub _me
     return $me;
 }
 
+sub get_player
+{
+    my ($self, $game, $id) = @_;
+    return grep { $_->{id} eq $id } @{ $game->{players} };
+}
+
+sub cleargames
+{
+    my ($self) = @_;
+    delete $self->{_currentgame};
+    delete $self->{_m}{me};
+    @{ $self->{_list}{data} } = ();
+}
+
 sub loadgame
 {
     my ($self, $game) = @_;
@@ -259,6 +273,7 @@ sub _handle_move_move
     # username: greeneries
     # ...
     my $game = $self->{_games}{ $n->{game_id} };
+    $self->get_player($game, $n->{user_id})->{score} += $n->{score};
     for my $m (@{ $n->{move} }) {
         my ($x, $y, $letter, $isblank) = @$m;
         my $already = $game->{_m}{renderer}->get_laid_tile(x => $x, y => $y);
@@ -271,6 +286,8 @@ sub _handle_move_move
 
         $game->{_m}{renderer}->makeletter(x => $x, y => $y, letter => $letter, isblank => $isblank);
     }
+
+    $self->draw_everything;
 }
 
 sub _handle_notification_move
@@ -307,6 +324,22 @@ sub _handle_notification_new_game
     my ($self, $n) = @_;
     my $game = $self->_fetch_game_by_id($n->{game_id});
     $self->loadgame($game);
+}
+
+sub _handle_notification_reminder
+{
+    my ($self, $n) = @_;
+    # created: 1322882113.00193
+    # game_id: 167065531
+    # time_left: 86508
+    # type: reminder
+    # user_id: 9401454
+    # username: greeneries
+    my $time = sprintf "%d hours", $n->{time_left} / 3600;
+    Gtk2::Ex::Dialogs::Message->new_and_run(
+            title => "Move reminder",
+            text  => "Hurry up ! Your turn against $n->{username} expires in $time",
+        );
 }
 
 sub _handle_notification
@@ -801,10 +834,13 @@ sub show_login_box
         $w->post($urlbase . '/user/games/');
         my $games = $self->_decode_content($w->content)->{games};
 
+        $self->cleargames;
         for my $gr (@$games) {
             my $game = $self->_fetch_game_by_id($gr->{id});
             $self->loadgame($game);
         }
+
+        $self->draw_everything;
 
         $self->get_widget('mainwindow')->set_title("Morpheem ($self->{_me}{username})");
         $self->draw_everything;
