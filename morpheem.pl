@@ -38,6 +38,18 @@ my $serverid = sprintf "%02d", int rand 7;
 my $urlbase = qq(http://game$serverid.wordfeud.com/wf);
 my @yesnoicons;
 
+# From https://github.com/iostream3/PHP-Wordfeud-API/blob/master/Wordfeud.php
+my @rulenames = (
+        'American',     # 0
+        'Norwegian',    # 1
+        'Dutch',        # 2
+        'Danish',       # 3
+        'Swedish',      # 4
+        'English',      # 5
+        'Spanish',      # 6
+        'French',       # 7
+    );
+
 # XXX
 my $pixels = 60;
 
@@ -105,10 +117,17 @@ sub _me
     return $me;
 }
 
+sub _game_list_entry
+{
+    my ($self, $game) = @_;
+    my $list = $self->{_list}{data};
+    return (grep { $_->[0] eq $game->{id} } @$list)[0];
+}
+
 sub get_player
 {
     my ($self, $game, $id) = @_;
-    return grep { $_->{id} eq $id } @{ $game->{players} };
+    return (grep { $_->{id} eq $id } @{ $game->{players} })[0];
 }
 
 sub cleargames
@@ -203,7 +222,7 @@ sub _handle_invite_received
     my ($self, $invite) = @_;
 
     my $user = $invite->{inviter};
-    my $rules = $invite->{ruleset}; # XXX convert
+    my $rules = $rulenames[ $invite->{ruleset} ];
     my $board = $invite->{board_type};
     my $result = Gtk2::Ex::Dialogs::Question->ask(
             title       => "Invitation received",
@@ -235,22 +254,25 @@ sub _handle_user_status
 sub _handle_move_resign
 {
     my ($self, $n) = @_;
-    #---
-    #created: 1322708935.04717
-    #game_id: 167035101
-    #move_type: resign
-    #type: move
-    #user_id: 9401454
-    #username: greeneries
-    #...
-    Gtk2::Ex::Dialogs::Message("$n->{username} resigned in game $n->{game_id}");
-    # TODO make game not ready
+    # created: 1322708935.04717
+    # game_id: 167035101
+    # move_type: resign
+    # type: move
+    # user_id: 9401454
+    # username: greeneries
+
+    Gtk2::Ex::Dialogs::Message->new_and_run(
+            title => "Player resigned",
+            text  => "$n->{username} resigned in game $n->{game_id}",
+            modal => 1,
+        );
+
+    # game was already not ready, because it was the opponent's turn
 }
 
 sub _handle_move_move
 {
     my ($self, $n) = @_;
-    # ---
     # created: 1322707406.52484
     # game_id: 167035101
     # main_word: NE...
@@ -271,10 +293,11 @@ sub _handle_move_move
     # type: move
     # user_id: 9401454
     # username: greeneries
-    # ...
+
     my $game = $self->{_games}{ $n->{game_id} };
-    $self->get_player($game, $n->{user_id})->{score} += $n->{score};
-    for my $m (@{ $n->{move} }) {
+    $self->get_player($game, $n->{user_id})->{score} += $n->{points};
+    my @moves = @{ $n->{move} };
+    for my $m (@moves) {
         my ($x, $y, $letter, $isblank) = @$m;
         my $already = $game->{_m}{renderer}->get_laid_tile(x => $x, y => $y);
         if ($already) {
@@ -285,9 +308,27 @@ sub _handle_move_move
         }
 
         $game->{_m}{renderer}->makeletter(x => $x, y => $y, letter => $letter, isblank => $isblank);
+        $game->{_m}{board}[$y][$x] = $letter;
     }
+    $game->{bag_count} -= @moves;
 
+    $self->advance_player($game);
     $self->draw_everything;
+}
+
+sub _handle_move_swap
+{
+    my ($self, $n) = @_;
+    # created: 1322927492.25654
+    # game_id: 167031099
+    # move_type: swap
+    # tile_count: 2
+    # type: move
+    # user_id: 9401454
+    # username: greeneries
+
+    my $game = $self->{_games}{ $n->{game_id} };
+    $self->advance_player($game);
 }
 
 sub _handle_notification_move
@@ -298,7 +339,23 @@ sub _handle_notification_move
         # Assume the method exists and trap it otherwise
         my $method = "_handle_move_$type";
         $self->$method($n);
-    };
+    }; if ($@) {
+        Gtk2::Ex::Dialogs::ErrorMsg->new_and_run(title => "Error", text => "Error : $@");
+    }
+}
+
+sub _handle_notification_chat
+{
+    my ($self, $n) = @_;
+    # created: 1322928938.11308
+    # game_id: 167031099
+    # message: hi there
+    # type: chat
+    # user_id: 9401454
+    # username: greeneries
+
+    # TODO integrate chat into UI
+    warn "$n->{username} said '$n->{message}'";
 }
 
 sub _handle_notification_invite_received
@@ -626,7 +683,7 @@ sub _find_words
 
     my ($self, $game, $tiles) = @_;
     $tiles ||= [ values %{ $game->{_m}{temptiles} } ];
-    return () unless @$tiles;
+    die "You didn't lay any tiles\n" unless @$tiles;
 
     my @words;
 
@@ -636,9 +693,8 @@ sub _find_words
     my $dx = $xs[0]->{x} - $xs[-1]->{x};
     my $dy = $ys[0]->{y} - $ys[-1]->{y};
 
-    return () if $dx and $dy;   # all in same axis
-
-    # TODO handle first move specially
+    die "All letters placed must be in the same row or column\n"
+        if $dx and $dy;
 
     my @map;
     for my $tile (@$tiles) {
@@ -652,14 +708,14 @@ sub _find_words
     if (!$dx) {
         my $x = $xs[0]->{x};
         for my $y ($xs[0]->{y} .. $xs[-1]->{y}) {
-            return () if not $board->[$y][$x] and not $map[$y][$x];
+            die "You didn't lay contiguous tiles\n" if not $board->[$y][$x] and not $map[$y][$x];
         }
     }
 
     if (!$dy) {
         my $y = $ys[0]->{y};
         for my $x ($ys[0]->{x} .. $ys[-1]->{x}) {
-            return () if not $board->[$y][$x] and not $map[$y][$x];
+            die "You didn't lay contiguous tiles\n" if not $board->[$y][$x] and not $map[$y][$x];
         }
     }
 
@@ -691,13 +747,26 @@ sub _find_words
     my @ok = uniq grep { length > 1 } @words;
     if (!$game->{move_count}) {
         my $centred = grep { $_->{x} == 7 and $_->{y} == 7 } @$tiles;
-        return $centred ? @ok : ();
+        return @ok if $centred;
+        die "You didn't lay the first word on the centre tile\n";
     } else {
         # iff the tiles are adjacent to something, the total length of the words
         # created will be greater than the number of tiles placed
         my $len = sum map length, @ok;
-        return (defined($len) and $len > @$tiles) ? @ok : ();
+        return @ok if defined($len) and $len > @$tiles;
+        die "You didn't lay your tiles adjacent to at least one already-laid tile\n";
     }
+}
+
+sub advance_player
+{
+    my ($self, $game) = @_;
+    my $players = $game->{players};
+    my $player = $$players[ ($game->{current_player} + 1) % @$players ];
+    WWW $player;
+    $game->{current_player} = $player->{position};
+    my $le = $self->_game_list_entry($game);
+    $le->[1] = $yesnoicons[ $self->_myturn($game) ];
 }
 
 sub _play_move
@@ -707,9 +776,15 @@ sub _play_move
     my @tiles = map {
         [ 0+$_->{x}, 0+$_->{y}, $_->{letter}, $_->{isblank} ? JSON::true : JSON::false ]
     } values %{ $game->{_m}{temptiles} };
-    my @words = $self->_find_words($game);
-    # TODO complain loudly to the user when there are no words
-    return unless @words;
+    my @words = eval { $self->_find_words($game); };
+    if (!@words or $@) {
+        my $message = $@ || "Your play didn't make any words";
+        Gtk2::Ex::Dialogs::ErrorMsg->new_and_run(
+                title => "Invalid play",
+                text  => $message,
+                modal => 1);
+        return;
+    }
 
     my %data = (
             ruleset => 0,
@@ -724,8 +799,20 @@ sub _play_move
         );
     my $response = $self->_decode_content($w->content);
     return unless $response;
+    $self->advance_player($game);
     $self->_setrack($game, [ @{ $game->{_m}{rack} }, @{ $response->{new_tiles} } ]);
-    # XXX $self->{_list}
+    $self->_me($game)->{score} += $response->{points};
+    $game->{bag_count} -= @tiles;
+
+    $game->{_m}{board}[ $_->[1] ][ $_->[0] ] = $_->[2] for @tiles;
+
+    delete $game->{_m}{temptiles};
+    delete $game->{_m}{temprack};
+
+    $self->get_widget('buttonplay')->sensitive(0);
+    $self->get_widget('buttonclear')->sensitive(0);
+
+    $self->draw_everything;
     # TODO we shouldn't have to reload the game all the time
 }
 
@@ -745,6 +832,8 @@ sub buttonclear_clicked_cb
 {
     my ($self, $button) = @_;
     my $game = $self->{_currentgame};
+
+    return unless $self->_tilesout($game);
 
     # TODO when does _rackbak get updated ?
     $self->_setrack($game, [ @{ $game->{_m}{rackbak} } ]);
@@ -768,6 +857,8 @@ sub decode_error
     my %codes = (
             wrong_password   => "Wrong password for given user",
             unknown_username => "Unknown username",
+            illegal_word     => "Illegal word",
+            illegal_tiles    => "Illegal tiles",
         );
 
     my ($self, $msg) = @_;
@@ -812,16 +903,18 @@ sub show_login_box
 
         my $username = $self->get_widget('entryusername')->get_text;
         my $password = $self->get_widget('entrypassword')->get_text;
+        my $is_email = $username =~ /@/;
 
         my $salt = "JarJarBinks9";
         my $pwhash = sha1_hex($password . $salt);
 
         my $w = $self->{_www};
-        $w->post($urlbase . '/user/login/',
+        $w->post($urlbase . '/user/login/' . ($is_email && "email/"),
                 Content_Type => 'application/json',
                 Content      => encode_json({
-                                    username => $username,
                                     password => $pwhash,
+                                    $is_email ? (email    => $username)
+                                              : (username => $username),
                                 }),
             );
 
