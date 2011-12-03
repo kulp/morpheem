@@ -849,6 +849,8 @@ sub show_login_box
     }
 }
 
+sub focus_password { shift->get_widget('entrypassword')->grab_focus }
+sub login_respond  { shift->get_widget('logindialog')->response("ok") }
 sub gtk_main_quit  { Gtk2->main_quit }
 sub show_about_box { shift->get_widget('aboutdialog1')->show }
 sub hide_dialog    { $_[1]->hide }
