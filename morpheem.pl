@@ -22,6 +22,7 @@ use Event;
 use AnyEvent;
 use Coro;
 
+use Attribute::Memoize;
 use Digest::SHA1 qw(sha1_hex);
 use File::Temp;
 use JSON;
@@ -74,7 +75,6 @@ sub _loadboard
     my ($self, $game) = @_;
     my $board = $game->{_m}{boardgroup};
     for my $tile (@{ $game->{tiles} }) {
-        # TODO handle blanks
         my ($x, $y, $letter, $isblank) = @$tile;
         $game->{_m}{renderer}->makeletter(parent => $board, x => $x, y => $y, letter => $letter, isblank => $isblank);
         $game->{_m}{board}[$y][$x] = $letter;
@@ -138,6 +138,18 @@ sub cleargames
     @{ $self->{_list}{data} } = ();
 }
 
+sub avatar_pixbuf :Memoize
+{
+    my ($self, $id) = @_;
+    my $file = File::Temp->new;
+    my $w = $self->{_www};
+    $w->get("http://avatars.wordfeud.com/$pixels/$id");
+    $w->save_content($file);
+    # TODO avoid hitting filesystem ?
+    my $large_pixbuf = Gtk2::Gdk::Pixbuf->new_from_file($file);
+    return $large_pixbuf->scale_simple(48, 48, "GDK_INTERP_HYPER");
+}
+
 sub loadgame
 {
     my ($self, $game) = @_;
@@ -153,33 +165,15 @@ sub loadgame
 
     $self->{_games}{ $game->{id} } = $game;
 
-    my $sl          = $self->{_list};
-    my $myturn      = $self->_myturn($game);
-    my $players     = $game->{players};
-    my $otherplayer = $players->[1 - $me->{position}]; # TODO support more than two players ?
-    my $rows        = $sl->{data};
-
-    my $small_pixbuf;
-    # TODO don't fetch the same image more than once
     async {
-        eval {
-            my $file = File::Temp->new;
-            my $w = $w->clone;
-            $w->get("http://avatars.wordfeud.com/$pixels/$otherplayer->{id}");
-            $w->save_content($file);
-            # TODO avoid hitting filesystem ?
-            my $large_pixbuf = Gtk2::Gdk::Pixbuf->new_from_file($file);
-            $small_pixbuf = $large_pixbuf->scale_simple(48, 48, "GDK_INTERP_HYPER");
-        };
-
-        push @$rows,
-            [ $game->{id}, $yesnoicons[$myturn], $small_pixbuf, $otherplayer->{username} ];
-
-        if (@$rows == 1) {
-            $sl->select($#$rows);
-            $self->{_currentgame} = $game;
-        }
-    };
+        local $self->{_www} = $self->{_www}->clone; # avoid state collision with async race (?)
+        my $pl = shift;
+        push @{ $self->{_list}{data} },
+            [ $game->{id},
+              $yesnoicons[ $self->_myturn($game) ],
+              $self->avatar_pixbuf($pl->{id}),
+              $pl->{username} ];
+    } grep { $_->{id} ne $me->{id} } @{ $game->{players} };
 }
 
 # TODO everything ?
@@ -813,7 +807,6 @@ sub _play_move
     $self->get_widget('buttonclear')->sensitive(0);
 
     $self->draw_everything;
-    # TODO we shouldn't have to reload the game all the time
 }
 
 sub buttonplay_clicked_cb
