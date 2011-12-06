@@ -20,7 +20,6 @@ use Gtk2::Ex::Dialogs destroy_with_parent => 1;
 use Glib::Event;
 use Event;
 use AnyEvent;
-use Coro;
 
 use Attribute::Memoize;
 use Digest::SHA1 qw(sha1_hex);
@@ -165,15 +164,12 @@ sub loadgame
 
     $self->{_games}{ $game->{id} } = $game;
 
-    async {
-        local $self->{_www} = $self->{_www}->clone; # avoid state collision with async race (?)
-        my $pl = shift;
-        push @{ $self->{_list}{data} },
-            [ $game->{id},
-              $yesnoicons[ $self->_myturn($game) ],
-              $self->avatar_pixbuf($pl->{id}),
-              $pl->{username} ];
-    } grep { $_->{id} ne $me->{id} } @{ $game->{players} };
+    my @others = grep { $_->{id} ne $me->{id} } @{ $game->{players} };
+    map { $_->{avatar} = $self->avatar_pixbuf($_->{id}); } @others;
+    my $yesno = $yesnoicons[ $self->_myturn($game) ];
+
+    push @{ $self->{_list}{data} },
+        [ $game->{id}, $yesno, $others[0]->{avatar}, $others[0]->{username} ];
 }
 
 # TODO everything ?
