@@ -227,6 +227,7 @@ sub _handle_invite_received
         $w->post($urlbase . "/invite/$invite->{id}/reject/");
     }
     # XXX check result of post
+    $self->draw_everything;
 }
 
 sub _handle_user_status
@@ -798,6 +799,7 @@ sub _play_move
 
     delete $game->{_m}{temptiles};
     delete $game->{_m}{temprack};
+    $game->{_m}{rackbak} = [ @{ $game->{_m}{rack} } ];
 
     $self->get_widget('buttonplay')->sensitive(0);
     $self->get_widget('buttonclear')->sensitive(0);
@@ -824,7 +826,7 @@ sub buttonclear_clicked_cb
 
     return unless $self->_tilesout($game);
 
-    # TODO when does _rackbak get updated ?
+    # TODO when does rackbak get updated ?
     $self->_setrack($game, [ @{ $game->{_m}{rackbak} } ]);
 
     $self->_back_out([ map $_->{group}, values %{ delete $game->{_m}{temptiles} } ]);
