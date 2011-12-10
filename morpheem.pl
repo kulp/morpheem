@@ -227,7 +227,6 @@ sub _handle_invite_received
         $w->post($urlbase . "/invite/$invite->{id}/reject/");
     }
     # XXX check result of post
-    $self->draw_everything;
 }
 
 sub _handle_user_status
@@ -372,6 +371,7 @@ sub _handle_notification_new_game
     my ($self, $n) = @_;
     my $game = $self->_fetch_game_by_id($n->{game_id});
     $self->loadgame($game);
+    $self->draw_everything;
 }
 
 sub _handle_notification_reminder
@@ -931,6 +931,25 @@ sub show_login_box
 
         $self->{_update} = AnyEvent->timer(after => 0, interval => 20, cb => sub { $self->_check_notifications });
     }
+}
+
+sub chatbutton_clicked
+{
+    my ($self, $button) = @_;
+    return $self->textchat_submitted($self->get_widget('chatentry'));
+}
+
+sub textchat_submitted
+{
+    my ($self, $textbox) = @_;
+    my $string = $textbox->get_text;
+    return unless length $string;
+    my $log = $self->get_widget('chattextview');
+    my $buf = $log->get_buffer;
+    my $iter = $buf->get_end_iter;
+    $buf->insert($iter, "$string\n");
+    $log->scroll_to_iter($iter, 0., 1, 0., 0.);
+    $textbox->set_text("");
 }
 
 sub focus_password { shift->get_widget('entrypassword')->grab_focus }
