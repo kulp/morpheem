@@ -13,7 +13,7 @@ my $margin      = 1;
 my $board_size  = 15 * $square_size + 16 * $margin;
 my $rack_width  = 7 * $square_size + 8 * $margin;
 my $rack_height = $square_size + 2 * $margin;
-my $font_size   = 0.39 * $square_size;
+my $font_size   = 0.29 * $square_size;
 
 sub new { bless { }, shift }
 
@@ -57,9 +57,9 @@ sub makesquare
         );
 
     $group->text(
-            x     => 0.20 * $square_size + $xc,
-            y     => 0.67 * $square_size + $yc,
-            style => "font-size:${font_size}pt;fill:white;font-family:monospace;$textstyle",
+            x     => 0.64 * $square_size + $xc,
+            y     => 0.64 * $square_size + $yc,
+            style => "font-size:${font_size}pt;fill:white;font-family:monospace;$textstyle;text-anchor:middle",
         )->tspan->cdata($text);
 
     return $group;
@@ -79,9 +79,9 @@ sub makeletter
 
     unless ($isblank) {
         $group->text(
-                x     => 0.55 * $square_size + $xc,
-                y     => 0.77 * $square_size + $yc,
-                style => "font-size:${font_size}pt;fill:black;font-family:monospace",
+                x     => 0.8 * $square_size + $xc,
+                y     => 0.8 * $square_size + $yc,
+                style => "font-size:${font_size}pt;fill:black;font-family:monospace;text-anchor:middle",
             )->tspan->cdata($values{lc $letter});
     }
 

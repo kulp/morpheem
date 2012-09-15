@@ -17,8 +17,8 @@ use Morpheem::Renderer::SVG;
 use Gtk2 -init;
 use Gtk2::Ex::Simple::List;
 use Gtk2::Ex::Dialogs destroy_with_parent => 1;
-use Glib::Event;
-use Event;
+#use Glib::Event;
+#use Event;
 use AnyEvent;
 
 use Attribute::Memoize;
